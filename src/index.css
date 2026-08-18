@@ -113,3 +113,59 @@ body {
   color: #9aa0a6;
   line-height: 1.5;
 }
+
+/* Grammar mistake highlight — verbatim text, just underlined */
+.grammar-error {
+  background: transparent;
+  color: inherit;
+  text-decoration: underline wavy #ea4335;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+.grammar-note {
+  font-size: 0.85rem;
+  color: #9aa0a6;
+}
+
+.grammar-note.error {
+  color: #ea4335;
+}
+
+.issues {
+  width: 100%;
+  max-width: 640px;
+  background: #1a1d24;
+  border: 1px solid #2b2f3a;
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+
+.issues h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #f0b232;
+  margin-bottom: 10px;
+}
+
+.issues ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.issues li {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: #cdd1d6;
+}
+
+.issue-phrase {
+  color: #ea4335;
+  font-weight: 600;
+}
+
+.issue-suggestion {
+  color: #9aa0a6;
+}
