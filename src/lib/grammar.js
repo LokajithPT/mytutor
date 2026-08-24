@@ -1,8 +1,8 @@
 const ENDPOINT = 'https://api.languagetool.org/v2/check'
 
-// Categories we deliberately ignore: the transcript is verbatim, so missing
-// commas / capitalization are never flagged.
-const IGNORED_CATEGORIES = new Set(['PUNCTUATION', 'CASING'])
+// Whisper transcribes with proper capitalization and punctuation, so
+// PUNCTUATION/CASING issues are real mistakes worth flagging. (This filter
+// existed only for Vosk, whose output had neither.)
 
 /**
  * Returns grammar issues for `text` as a list of spans:
@@ -23,13 +23,11 @@ export async function checkGrammar(text, { lang = 'en-US', signal } = {}) {
   if (!res.ok) throw new Error(`grammar check failed: ${res.status}`)
 
   const data = await res.json()
-  return (data.matches || [])
-    .filter((m) => !IGNORED_CATEGORIES.has(m.rule?.category?.id))
-    .map((m) => ({
-      offset: m.offset,
-      length: m.length,
-      message: m.message,
-      short: m.shortMessage || m.message,
-      suggestions: (m.replacements || []).map((r) => r.value),
-    }))
+  return (data.matches || []).map((m) => ({
+    offset: m.offset,
+    length: m.length,
+    message: m.message,
+    short: m.shortMessage || m.message,
+    suggestions: (m.replacements || []).map((r) => r.value),
+  }))
 }

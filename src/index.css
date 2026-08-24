@@ -95,6 +95,11 @@ body {
   cursor: not-allowed;
 }
 
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
 .card.unsupported {
   background: #1a1d24;
   border: 1px solid #2b2f3a;
@@ -269,6 +274,7 @@ body {
 
 /* The paragraph, word by word — monkeytype style */
 .reading-text {
+  position: relative; /* anchor for offsetTop-based auto-scroll */
   width: 100%;
   min-height: 140px;
   max-height: 320px;

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import MicButton from './MicButton'
 import { alignSpoken, tokenize } from '../lib/align'
 
@@ -19,6 +19,8 @@ export default function ReadingTest({
 }) {
   const [text, setText] = useState(SELF_INTRO)
   const [phase, setPhase] = useState('setup') // setup | running | done
+  const [elapsed, setElapsed] = useState(0)
+  const textBoxRef = useRef(null)
 
   const words = useMemo(() => tokenize(text), [text])
 
@@ -27,15 +29,37 @@ export default function ReadingTest({
     return alignSpoken(spoken, words, { finalize: phase === 'done' })
   }, [transcript, words, phase])
 
+  // Keep the word being read in view.
+  useEffect(() => {
+    const box = textBoxRef.current
+    if (!box) return
+    const el = box.querySelector('[data-current="true"]')
+    if (!el) return
+    box.scrollTo({
+      top: Math.max(0, el.offsetTop - box.clientHeight / 2),
+      behavior: 'smooth',
+    })
+  }, [pointer])
+
+  // Reading timer.
+  useEffect(() => {
+    if (phase !== 'running') return
+    const id = setInterval(() => setElapsed((s) => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [phase])
+
   const correctCount = status.filter((s) => s === 'correct').length
   const missedCount = status.filter(
     (s) => s === 'missed' || s === 'incorrect',
   ).length
   const accuracy =
     words.length > 0 ? Math.round((correctCount / words.length) * 100) : 0
+  const wpm = elapsed >= 5 ? Math.round((correctCount / elapsed) * 60) : null
+  const clock = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`
 
   function begin() {
     if (!text.trim()) return
+    setElapsed(0)
     setPhase('running')
     start()
   }
@@ -117,12 +141,21 @@ export default function ReadingTest({
                 <span className="stat-bad">{missedCount} wrong/skipped</span>
               </>
             )}
+            <span className="stat-sep">·</span>
+            <span className="stat-dim">{clock}</span>
+            {wpm != null && (
+              <>
+                <span className="stat-sep">·</span>
+                <span className="stat-dim">{wpm} wpm</span>
+              </>
+            )}
           </div>
 
-          <div className="reading-text" aria-live="polite">
+          <div className="reading-text" ref={textBoxRef} aria-live="polite">
             {words.map((word, i) => (
               <span key={i}>
                 <span
+                  data-current={i === pointer && phase === 'running'}
                   className={`rw ${status[i]} ${
                     i === pointer && phase === 'running' ? 'current' : ''
                   }`}

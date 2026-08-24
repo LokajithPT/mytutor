@@ -13,6 +13,7 @@ export default function App() {
 
   const [matches, setMatches] = useState([])
   const [grammarState, setGrammarState] = useState('idle') // idle | checking | error
+  const [copied, setCopied] = useState(false)
   const abortRef = useRef(null)
 
   // Grammar check runs on the finalized transcript (debounced), in Dictate
@@ -144,13 +145,26 @@ export default function App() {
             </section>
           )}
 
-          <button
-            className="clear"
-            onClick={asr.reset}
-            disabled={listening}
-          >
-            Clear
-          </button>
+          <div className="actions">
+            <button
+              className="clear"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(transcript)
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1500)
+                } catch {
+                  /* clipboard unavailable */
+                }
+              }}
+              disabled={!transcript || listening}
+            >
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+            <button className="clear" onClick={asr.reset} disabled={listening}>
+              Clear
+            </button>
+          </div>
         </>
       ) : (
         <ReadingTest {...asr} />
