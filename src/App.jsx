@@ -1,15 +1,34 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWhisper } from './hooks/useWhisper'
 import { checkGrammar } from './lib/grammar'
 import MicButton from './components/MicButton'
+import MicSettings from './components/MicSettings'
 import HighlightedText from './components/HighlightedText'
 import ReadingTest from './components/ReadingTest'
 
+const MIC_STORAGE_KEY = 'mytutor.micId'
+
 export default function App() {
   const [mode, setMode] = useState('dictate') // dictate | read
+  const [showMicPanel, setShowMicPanel] = useState(false)
+  const [micId, setMicId] = useState(
+    () => localStorage.getItem(MIC_STORAGE_KEY) || '',
+  )
   const asr = useWhisper()
   const { supported, loading, progress, listening, transcript, interim, error } =
     asr
+
+  const selectMic = useCallback((id) => {
+    setMicId(id)
+    if (id) localStorage.setItem(MIC_STORAGE_KEY, id)
+    else localStorage.removeItem(MIC_STORAGE_KEY)
+  }, [])
+
+  // Every capture start goes through here so the chosen device is used.
+  const startWithDevice = useCallback(
+    (opts) => asr.start({ ...opts, deviceId: micId || undefined }),
+    [asr, micId],
+  )
 
   const [matches, setMatches] = useState([])
   const [grammarState, setGrammarState] = useState('idle') // idle | checking | error
@@ -45,7 +64,7 @@ export default function App() {
     return () => clearTimeout(handle)
   }, [transcript, mode])
 
-  const toggle = () => (listening ? asr.stop() : asr.start())
+  const toggle = () => (listening ? asr.stop() : startWithDevice())
 
   const issueList = useMemo(
     () =>
@@ -76,21 +95,40 @@ export default function App() {
     <main className="app">
       <header className="topbar">
         <h1>mytutor</h1>
-        <nav className="mode-toggle" aria-label="Mode">
+        <div className="controls">
+          <nav className="mode-toggle" aria-label="Mode">
+            <button
+              className={`mode-btn ${mode === 'dictate' ? 'active' : ''}`}
+              onClick={() => setMode('dictate')}
+            >
+              Dictate
+            </button>
+            <button
+              className={`mode-btn ${mode === 'read' ? 'active' : ''}`}
+              onClick={() => setMode('read')}
+            >
+              Reading Test
+            </button>
+          </nav>
           <button
-            className={`mode-btn ${mode === 'dictate' ? 'active' : ''}`}
-            onClick={() => setMode('dictate')}
+            className="settings-btn"
+            aria-label="Microphone settings"
+            title="Microphone settings"
+            onClick={() => setShowMicPanel((v) => !v)}
           >
-            Dictate
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z" />
+            </svg>
           </button>
-          <button
-            className={`mode-btn ${mode === 'read' ? 'active' : ''}`}
-            onClick={() => setMode('read')}
-          >
-            Reading Test
-          </button>
-        </nav>
+        </div>
       </header>
+
+      {showMicPanel && (
+        <MicSettings
+          currentId={micId}
+          onSelect={selectMic}
+        />
+      )}
 
       {mode === 'dictate' ? (
         <>
@@ -167,7 +205,7 @@ export default function App() {
           </div>
         </>
       ) : (
-        <ReadingTest {...asr} />
+        <ReadingTest {...asr} start={startWithDevice} />
       )}
     </main>
   )

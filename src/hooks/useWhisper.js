@@ -170,7 +170,7 @@ export function useWhisper() {
     [sliceAudio],
   )
 
-  const start = useCallback(async () => {
+  const start = useCallback(async ({ deviceId } = {}) => {
     if (listening) return
     setError(null)
     setTranscript('')
@@ -189,6 +189,7 @@ export function useWhisper() {
           echoCancellation: true,
           noiseSuppression: true,
           channelCount: 1,
+          ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
         },
       })
       streamRef.current = stream
@@ -221,7 +222,7 @@ export function useWhisper() {
       setLoading(false)
       setError(e?.message || 'Mic access failed')
     }
-  }, [listening, transcribe])
+  }, [listening, transcribe, deviceId])
 
   const stop = useCallback(() => {
     const flush = transcribe({ final: true }).catch(() => {})
