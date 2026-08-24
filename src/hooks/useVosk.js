@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createModel } from 'vosk-browser'
 import { getCachedModelUrl } from '../lib/modelCache'
 
-const MODEL_URL = '/vosk-models/vosk-model-small-en-us-0.15.tar.gz'
+// Indian-English model, served from /public/models (see scripts/prepare-model.sh).
+// Much better at Indian names/accents ("Arun Kumar", "Coimbatore") than en-us.
+const MODEL_URL = '/models/vosk-model-small-en-in-0.4.tar.gz'
 
 export function useVosk({ modelUrl = MODEL_URL } = {}) {
   const [supported] = useState(
@@ -39,7 +41,7 @@ export function useVosk({ modelUrl = MODEL_URL } = {}) {
     }
   }, [modelUrl])
 
-  const start = useCallback(async () => {
+  const start = useCallback(async ({ grammar } = {}) => {
     if (listening) return
     setError(null)
     try {
@@ -50,6 +52,7 @@ export function useVosk({ modelUrl = MODEL_URL } = {}) {
           echoCancellation: true,
           noiseSuppression: true,
           channelCount: 1,
+          sampleRate: 16000,
         },
       })
       streamRef.current = stream
@@ -58,7 +61,12 @@ export function useVosk({ modelUrl = MODEL_URL } = {}) {
       if (audioCtx.state === 'suspended') await audioCtx.resume()
       audioCtxRef.current = audioCtx
 
-      const recognizer = new model.KaldiRecognizer(16000)
+      // `grammar` (array of words) constrains recognition to that vocabulary,
+      // which massively boosts accuracy when reading a known paragraph.
+      const recognizer = new model.KaldiRecognizer(
+        16000,
+        grammar ? JSON.stringify(grammar) : undefined,
+      )
       recognizerRef.current = recognizer
       recognizer.on('result', (msg) => {
         const text = msg.result?.text?.trim()
