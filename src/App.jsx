@@ -3,28 +3,22 @@ import { useVosk } from './hooks/useVosk'
 import { checkGrammar } from './lib/grammar'
 import MicButton from './components/MicButton'
 import HighlightedText from './components/HighlightedText'
+import ReadingTest from './components/ReadingTest'
 
 export default function App() {
-  const {
-    supported,
-    loading,
-    listening,
-    transcript,
-    interim,
-    error,
-    start,
-    stop,
-    reset,
-  } = useVosk({ lang: 'en-US' })
+  const [mode, setMode] = useState('dictate') // dictate | read
+  const vosk = useVosk({ lang: 'en-US' })
+  const { supported, loading, listening, transcript, interim, error } = vosk
 
   const [matches, setMatches] = useState([])
   const [grammarState, setGrammarState] = useState('idle') // idle | checking | error
   const abortRef = useRef(null)
 
-  // Run grammar check on the finalized transcript (debounced). The original
-  // text is never changed — we only collect error spans to highlight.
+  // Grammar check runs on the finalized transcript (debounced), in Dictate
+  // mode only. The original text is never changed — we collect spans to
+  // highlight, ignoring punctuation/casing categories.
   useEffect(() => {
-    if (!transcript.trim()) {
+    if (mode !== 'dictate' || !transcript.trim()) {
       setMatches([])
       setGrammarState('idle')
       return
@@ -47,9 +41,9 @@ export default function App() {
       }
     }, 700)
     return () => clearTimeout(handle)
-  }, [transcript])
+  }, [transcript, mode])
 
-  const toggle = () => (listening ? stop() : start())
+  const toggle = () => (listening ? vosk.stop() : vosk.start())
 
   const issueList = useMemo(
     () =>
@@ -78,59 +72,86 @@ export default function App() {
 
   return (
     <main className="app">
-      <h1>Live Speech to Text</h1>
+      <header className="topbar">
+        <h1>mytutor</h1>
+        <nav className="mode-toggle" aria-label="Mode">
+          <button
+            className={`mode-btn ${mode === 'dictate' ? 'active' : ''}`}
+            onClick={() => setMode('dictate')}
+          >
+            Dictate
+          </button>
+          <button
+            className={`mode-btn ${mode === 'read' ? 'active' : ''}`}
+            onClick={() => setMode('read')}
+          >
+            Reading Test
+          </button>
+        </nav>
+      </header>
 
-      <MicButton listening={listening} disabled={loading} onToggle={toggle} />
+      {mode === 'dictate' ? (
+        <>
+          <MicButton listening={listening} disabled={loading} onToggle={toggle} />
 
-      <p className="status">
-        {loading
-          ? 'Loading offline model (first time only)…'
-          : error
-            ? `Error: ${error}`
-            : listening
-              ? 'Listening… click to stop'
-              : 'Click the mic and start talking'}
-      </p>
+          <p className="status">
+            {loading
+              ? 'Loading offline model (first time only)…'
+              : error
+                ? `Error: ${error}`
+                : listening
+                  ? 'Listening… click to stop'
+                  : 'Click the mic and start talking'}
+          </p>
 
-      <section className="transcript" aria-live="polite">
-        <span className="final">
-          <HighlightedText text={transcript} matches={matches} />
-        </span>
-        <span className="interim">{interim}</span>
-        {listening && <span className="caret" />}
-      </section>
+          <section className="transcript" aria-live="polite">
+            <span className="final">
+              <HighlightedText text={transcript} matches={matches} />
+            </span>
+            <span className="interim">{interim}</span>
+            {listening && <span className="caret" />}
+          </section>
 
-      {grammarState === 'checking' && (
-        <p className="grammar-note">Checking grammar…</p>
+          {grammarState === 'checking' && (
+            <p className="grammar-note">Checking grammar…</p>
+          )}
+          {grammarState === 'error' && (
+            <p className="grammar-note error">
+              Grammar check unavailable (needs internet).
+            </p>
+          )}
+
+          {issueList.length > 0 && (
+            <section className="issues">
+              <h2>{issueList.length} thing(s) to look at</h2>
+              <ul>
+                {issueList.map((m, i) => (
+                  <li key={i}>
+                    <span className="issue-phrase">“{m.phrase}”</span> —{' '}
+                    {m.message}
+                    {m.suggestions?.length > 0 && (
+                      <span className="issue-suggestion">
+                        {' '}
+                        (try: {m.suggestions.join(', ')})
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <button
+            className="clear"
+            onClick={vosk.reset}
+            disabled={listening}
+          >
+            Clear
+          </button>
+        </>
+      ) : (
+        <ReadingTest {...vosk} />
       )}
-      {grammarState === 'error' && (
-        <p className="grammar-note error">
-          Grammar check unavailable (needs internet).
-        </p>
-      )}
-
-      {issueList.length > 0 && (
-        <section className="issues">
-          <h2>{issueList.length} thing(s) to look at</h2>
-          <ul>
-            {issueList.map((m, i) => (
-              <li key={i}>
-                <span className="issue-phrase">“{m.phrase}”</span> — {m.message}
-                {m.suggestions?.length > 0 && (
-                  <span className="issue-suggestion">
-                    {' '}
-                    (try: {m.suggestions.join(', ')})
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <button className="clear" onClick={reset} disabled={listening}>
-        Clear
-      </button>
     </main>
   )
 }
