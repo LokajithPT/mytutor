@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useVosk } from './hooks/useVosk'
+import { useWhisper } from './hooks/useWhisper'
 import { checkGrammar } from './lib/grammar'
 import MicButton from './components/MicButton'
 import HighlightedText from './components/HighlightedText'
@@ -7,8 +7,9 @@ import ReadingTest from './components/ReadingTest'
 
 export default function App() {
   const [mode, setMode] = useState('dictate') // dictate | read
-  const vosk = useVosk({ lang: 'en-US' })
-  const { supported, loading, listening, transcript, interim, error } = vosk
+  const asr = useWhisper()
+  const { supported, loading, progress, listening, transcript, interim, error } =
+    asr
 
   const [matches, setMatches] = useState([])
   const [grammarState, setGrammarState] = useState('idle') // idle | checking | error
@@ -43,7 +44,7 @@ export default function App() {
     return () => clearTimeout(handle)
   }, [transcript, mode])
 
-  const toggle = () => (listening ? vosk.stop() : vosk.start())
+  const toggle = () => (listening ? asr.stop() : asr.start())
 
   const issueList = useMemo(
     () =>
@@ -96,7 +97,9 @@ export default function App() {
 
           <p className="status">
             {loading
-              ? 'Loading offline model (first time only)…'
+              ? `Loading Whisper model (first time only)…${
+                  progress != null ? ` ${Math.round(progress)}%` : ''
+                }`
               : error
                 ? `Error: ${error}`
                 : listening
@@ -143,14 +146,14 @@ export default function App() {
 
           <button
             className="clear"
-            onClick={vosk.reset}
+            onClick={asr.reset}
             disabled={listening}
           >
             Clear
           </button>
         </>
       ) : (
-        <ReadingTest {...vosk} />
+        <ReadingTest {...asr} />
       )}
     </main>
   )
