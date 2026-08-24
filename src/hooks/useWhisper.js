@@ -222,7 +222,7 @@ export function useWhisper() {
       setLoading(false)
       setError(e?.message || 'Mic access failed')
     }
-  }, [listening, transcribe, deviceId])
+  }, [listening, transcribe])
 
   const stop = useCallback(() => {
     const flush = transcribe({ final: true }).catch(() => {})
