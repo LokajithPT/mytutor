@@ -8,6 +8,11 @@ const MIN_AUDIO_S = 2 // don't transcribe before this much audio exists
 const TAIL_KEEP_S = 0.35 // words ending this close to the live edge stay interim
 const CONTEXT_S = 0.5 // re-check window behind the finalized frontier
 const HEALTH_POLL_MS = 10000
+// RMS below this is treated as room tone and never sent — feeding silence to
+// Whisper makes it hallucinate stock phrases. Generous hangover keeps word
+// tails from being clipped at speech boundaries.
+const SPEECH_RMS = 0.0025
+const HANGOVER_CHUNKS = 8 // ~2s of trailing audio kept after speech stops
 
 /**
  * Live speech-to-text backed by the local faster-whisper service
@@ -62,11 +67,25 @@ export function useWhisper() {
   const busyRef = useRef(false)
   const captureRateRef = useRef(SAMPLE_RATE)
   const serverUpRef = useRef('unknown')
+  const hangoverRef = useRef(0)
 
   // Growing audio buffer, kept as fixed-size chunks.
   const chunksRef = useRef([])
   const totalRef = useRef(0)
   const frontierRef = useRef(0) // seconds of already-emitted audio
+
+  const resetBuffer = useCallback(() => {
+    chunksRef.current = []
+    totalRef.current = 0
+    frontierRef.current = 0
+    hangoverRef.current = 0
+    busyRef.current = false
+  }, [])
+
+  const pushChunk = useCallback((data) => {
+    chunksRef.current.push(new Float32Array(data))
+    totalRef.current += data.length
+  }, [])
 
   const sliceAudio = useCallback((fromS, toS) => {
     const from = Math.max(0, Math.floor(fromS * SAMPLE_RATE))
@@ -181,7 +200,7 @@ export function useWhisper() {
         busyRef.current = false
       }
     },
-    [sliceAudio, probeHealth],
+    [sliceAudio, probeHealth, resetBuffer, pushChunk],
   )
 
   const start = useCallback(
@@ -190,7 +209,10 @@ export function useWhisper() {
       setError(null)
       setTranscript('')
       setInterim('')
-      frontierRef.current = 0
+      // Fresh session: wipe the previous recording's audio too, otherwise
+      // the first tick re-transcribes everything from old sessions and
+      // stale words come flooding back.
+      resetBuffer()
 
       if (serverUpRef.current !== 'up') {
         await probeHealth()
@@ -224,10 +246,22 @@ export function useWhisper() {
         const source = ctx.createMediaStreamSource(stream)
         const proc = ctx.createScriptProcessor(CHUNK_SAMPLES, 1, 1)
         proc.onaudioprocess = (e) => {
-          const input = e.inputBuffer.getChannelData(0)
-          const data = resampleTo16k(input, captureRateRef.current)
-          chunksRef.current.push(new Float32Array(data))
-          totalRef.current += data.length
+          const raw = e.inputBuffer.getChannelData(0)
+          const data = resampleTo16k(raw, captureRateRef.current)
+
+          let sum = 0
+          for (let i = 0; i < data.length; i++) sum += data[i] * data[i]
+          const rms = Math.sqrt(sum / data.length)
+
+          if (rms >= SPEECH_RMS) {
+            hangoverRef.current = HANGOVER_CHUNKS
+            pushChunk(data)
+          } else if (hangoverRef.current > 0) {
+            hangoverRef.current--
+            pushChunk(data)
+          }
+          // else: dead air — dropped, timeline stays consistent because
+          // totalRef only counts what we actually keep.
         }
         const sink = ctx.createGain()
         sink.gain.value = 0
@@ -244,7 +278,7 @@ export function useWhisper() {
         setError(e?.message || 'Mic access failed')
       }
     },
-    [listening, transcribe, probeHealth],
+    [listening, transcribe, probeHealth, resetBuffer],
   )
 
   const stop = useCallback(() => {
