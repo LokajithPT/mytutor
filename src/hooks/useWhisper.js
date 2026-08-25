@@ -1,42 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { pipeline, env } from '@huggingface/transformers'
 
-const MODEL_ID = 'Xenova/whisper-base.en' // English-only, ~80MB, cached offline
+const SERVER_URL = '/api/stt'
 const SAMPLE_RATE = 16000
 const CHUNK_SAMPLES = 4096
 const TICK_MS = 1500 // transcription cadence while listening
 const MIN_AUDIO_S = 2 // don't transcribe before this much audio exists
 const TAIL_KEEP_S = 0.35 // words ending this close to the live edge stay interim
 const CONTEXT_S = 0.5 // re-check window behind the finalized frontier
+const HEALTH_POLL_MS = 10000
 
-// Skip heavy node-only backends if the bundler pulls them in.
-env.allowLocalModels = false
+/**
+ * Live speech-to-text backed by the local faster-whisper service
+ * (see server/main.py). Audio is captured at 16kHz, chunked, and posted to
+ * /api/stt/transcribe; word timestamps come back already shifted onto the
+ * client's audio timeline, where a frontier-based merge turns them into
+ * finalized transcript + interim tail.
+ */
 
-let asrPromise = null
-let progressSink = null
-
-function loadASR() {
-  if (!asrPromise) {
-    const report = (p) => {
-      if (p?.status === 'progress' && p.total) {
-        progressSink?.((p.loaded / p.total) * 100)
-      }
-    }
-    const tryLoad = (device, dtype) =>
-      pipeline('automatic-speech-recognition', MODEL_ID, {
-        device,
-        dtype,
-        progress_callback: report,
-      })
-
-    asrPromise = navigator.gpu
-      ? tryLoad('webgpu', 'fp32').catch(() => tryLoad('wasm', 'q8'))
-      : tryLoad('wasm', 'q8')
-    asrPromise.catch(() => {
-      asrPromise = null
-    })
+function encodePcm16(float32) {
+  const buffer = new ArrayBuffer(float32.length * 2)
+  const view = new DataView(buffer)
+  for (let i = 0; i < float32.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32[i]))
+    view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true)
   }
-  return asrPromise
+  return buffer
 }
 
 // Linear-resample fallback for browsers that ignore the AudioContext
@@ -57,17 +45,11 @@ function resampleTo16k(input, inputRate) {
   return out
 }
 
-/**
- * Live speech-to-text powered by an in-browser Whisper model.
- * Same interface as the old Vosk hook: transcript grows word by word while
- * `listening`; `interim` holds words near the live edge.
- */
 export function useWhisper() {
   const [supported] = useState(
     () => typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia,
   )
-  const [loading, setLoading] = useState(false)
-  const [progress, setProgress] = useState(null)
+  const [serverUp, setServerUp] = useState('unknown') // unknown | up | down
   const [listening, setListening] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [interim, setInterim] = useState('')
@@ -79,6 +61,7 @@ export function useWhisper() {
   const timerRef = useRef(null)
   const busyRef = useRef(false)
   const captureRateRef = useRef(SAMPLE_RATE)
+  const serverUpRef = useRef('unknown')
 
   // Growing audio buffer, kept as fixed-size chunks.
   const chunksRef = useRef([])
@@ -106,11 +89,37 @@ export function useWhisper() {
     return out
   }, [])
 
+  const probeHealth = useCallback(async () => {
+    try {
+      const res = await fetch(`${SERVER_URL}/health`, {
+        signal: AbortSignal.timeout(3000),
+      })
+      const ok = res.ok && (await res.json())?.ready
+      serverUpRef.current = ok ? 'up' : 'down'
+      setServerUp(serverUpRef.current)
+    } catch {
+      serverUpRef.current = 'down'
+      setServerUp('down')
+    }
+  }, [])
+
+  // Probe now, then keep polling so the UI recovers once the user starts
+  // the server (no reload needed).
+  useEffect(() => {
+    probeHealth()
+    const id = setInterval(() => {
+      if (serverUpRef.current !== 'up') probeHealth()
+    }, HEALTH_POLL_MS)
+    return () => clearInterval(id)
+  }, [probeHealth])
+
   const transcribe = useCallback(
     async ({ final = false } = {}) => {
       if (busyRef.current) return
-      const asr = await loadASR()
-      if (!chunksRef.current.length) return
+      if (serverUpRef.current !== 'up') {
+        await probeHealth()
+        if (serverUpRef.current !== 'up') throw new Error('Speech server offline')
+      }
 
       const dur = totalRef.current / SAMPLE_RATE
       const frontier = frontierRef.current
@@ -119,21 +128,27 @@ export function useWhisper() {
 
       if (!final && (dur < MIN_AUDIO_S || dur - frontier < 0.8)) return
 
+      const audio = sliceAudio(fromS, dur)
+      if (audio.length < SAMPLE_RATE * 0.3) return
+
       busyRef.current = true
       try {
-        const audio = sliceAudio(fromS, dur)
-        if (audio.length < SAMPLE_RATE * 0.3) return
+        const res = await fetch(
+          `${SERVER_URL}/transcribe?offset=${fromS.toFixed(3)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: encodePcm16(audio),
+          },
+        )
+        if (!res.ok) throw new Error(`STT server error ${res.status}`)
+        const data = await res.json()
 
-        const out = await asr(audio, {
-          return_timestamps: 'word',
-          chunk_length_s: 30,
-          stride_length_s: 5,
-        })
-
-        const words = (out.chunks || []).map((c) => ({
-          text: (c.text || '').trim(),
-          start: fromS + (c.timestamp?.[0] ?? 0),
-          end: fromS + (c.timestamp?.[1] ?? Number.MAX_SAFE_INTEGER),
+        // Word times arrive absolute (offset applied server-side).
+        const words = (data.words || []).map((w) => ({
+          text: (w.text || '').trim(),
+          start: w.start ?? 0,
+          end: w.end ?? Number.MAX_SAFE_INTEGER,
         }))
 
         const finals = []
@@ -142,8 +157,8 @@ export function useWhisper() {
         for (const w of words) {
           if (!w.text) continue
           if (w.end <= frontier) continue // fully old
-          // Boundary duplicate: word straddles the frontier and whisper
-          // re-reported it with jittered timestamps.
+          // Boundary duplicate: word straddles the frontier and was
+          // re-reported because chunks overlap by CONTEXT_S.
           const startedBefore = w.start < frontier - 0.05
           if (startedBefore && w.end <= frontier + 0.25) continue
           if (w.end <= dur - tailKeep) {
@@ -161,68 +176,76 @@ export function useWhisper() {
           )
         }
         setInterim(parts.join(' '))
-      } catch (e) {
-        setError(e?.message || 'Transcription failed')
+        setError(null)
       } finally {
         busyRef.current = false
       }
     },
-    [sliceAudio],
+    [sliceAudio, probeHealth],
   )
 
-  const start = useCallback(async ({ deviceId } = {}) => {
-    if (listening) return
-    setError(null)
-    setTranscript('')
-    setInterim('')
-    frontierRef.current = 0
-    try {
-      setLoading(true)
-      progressSink = setProgress
-      await loadASR()
-      setLoading(false)
-      setProgress(null)
+  const start = useCallback(
+    async ({ deviceId } = {}) => {
+      if (listening) return
+      setError(null)
+      setTranscript('')
+      setInterim('')
+      frontierRef.current = 0
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: false,
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          channelCount: 1,
-          ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-        },
-      })
-      streamRef.current = stream
-
-      const ctx = new (window.AudioContext || window.webkitAudioContext)({
-        sampleRate: SAMPLE_RATE,
-      })
-      if (ctx.state === 'suspended') await ctx.resume()
-      ctxRef.current = ctx
-      captureRateRef.current = ctx.sampleRate
-
-      const source = ctx.createMediaStreamSource(stream)
-      const proc = ctx.createScriptProcessor(CHUNK_SAMPLES, 1, 1)
-      proc.onaudioprocess = (e) => {
-        const input = e.inputBuffer.getChannelData(0)
-        const data = resampleTo16k(input, captureRateRef.current)
-        chunksRef.current.push(new Float32Array(data))
-        totalRef.current += data.length
+      if (serverUpRef.current !== 'up') {
+        await probeHealth()
       }
-      const sink = ctx.createGain()
-      sink.gain.value = 0
-      source.connect(proc)
-      proc.connect(sink)
-      sink.connect(ctx.destination)
-      procRef.current = proc
+      if (serverUpRef.current !== 'up') {
+        setError(
+          'Speech server is not running. Start it with: python server/main.py',
+        )
+        return
+      }
 
-      timerRef.current = setInterval(() => transcribe(), TICK_MS)
-      setListening(true)
-    } catch (e) {
-      setLoading(false)
-      setError(e?.message || 'Mic access failed')
-    }
-  }, [listening, transcribe])
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: false,
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            channelCount: 1,
+            ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+          },
+        })
+        streamRef.current = stream
+
+        const ctx = new (window.AudioContext || window.webkitAudioContext)({
+          sampleRate: SAMPLE_RATE,
+        })
+        if (ctx.state === 'suspended') await ctx.resume()
+        ctxRef.current = ctx
+        captureRateRef.current = ctx.sampleRate
+
+        const source = ctx.createMediaStreamSource(stream)
+        const proc = ctx.createScriptProcessor(CHUNK_SAMPLES, 1, 1)
+        proc.onaudioprocess = (e) => {
+          const input = e.inputBuffer.getChannelData(0)
+          const data = resampleTo16k(input, captureRateRef.current)
+          chunksRef.current.push(new Float32Array(data))
+          totalRef.current += data.length
+        }
+        const sink = ctx.createGain()
+        sink.gain.value = 0
+        source.connect(proc)
+        proc.connect(sink)
+        sink.connect(ctx.destination)
+        procRef.current = proc
+
+        timerRef.current = setInterval(() => {
+          transcribe().catch((err) => setError(err?.message || String(err)))
+        }, TICK_MS)
+        setListening(true)
+      } catch (e) {
+        setError(e?.message || 'Mic access failed')
+      }
+    },
+    [listening, transcribe, probeHealth],
+  )
 
   const stop = useCallback(() => {
     const flush = transcribe({ final: true }).catch(() => {})
@@ -261,8 +284,7 @@ export function useWhisper() {
 
   return {
     supported,
-    loading,
-    progress,
+    serverUp,
     listening,
     transcript,
     interim,

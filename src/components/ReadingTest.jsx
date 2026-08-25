@@ -2,13 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import MicButton from './MicButton'
 import { alignSpoken, tokenize } from '../lib/align'
 
+// Simple common words, no proper nouns — easy for the model to follow.
+const EASY_PRACTICE = `The sun rises in the east and sets in the west. Every morning, she walks to the park near her house. She likes to watch the birds and listen to the wind in the trees. After her walk, she drinks a cup of tea and reads the news. In the evening, her family sits together and talks about their day.`
+
 const SELF_INTRO = `Good morning everyone. My name is Arun Kumar, and I am from Coimbatore, Tamil Nadu. I am currently pursuing my degree in English. I have always been interested in language, literature, and communication, which encouraged me to choose English as my area of study. I enjoy reading books, listening to music, and watching movies during my free time. I also like spending time with my friends and family. I would describe myself as a friendly, responsible, and hardworking person. I enjoy participating in classroom discussions, presentations, and other academic activities. These experiences have helped me improve my confidence and communication skills. I am always interested in learning something new and developing my abilities. I believe that every experience gives us an opportunity to learn and grow. One of my strengths is my willingness to accept challenges and learn from my mistakes. At the same time, I am working on becoming more confident while speaking in public. My immediate goal is to perform well in my studies and improve my skills. In the future, I would like to build a successful career in a field that matches my interests. I believe that dedication, patience, and continuous learning will help me achieve my goals. Thank you for giving me this opportunity to introduce myself.`
 
-const PRESETS = [{ label: 'Self-introduction 1', text: SELF_INTRO }]
+const PRESETS = [
+  { label: 'Easy practice', text: EASY_PRACTICE },
+  { label: 'Self-introduction', text: SELF_INTRO },
+]
 
 export default function ReadingTest({
-  loading,
-  progress,
+  serverUp,
   listening,
   transcript,
   interim,
@@ -17,7 +22,7 @@ export default function ReadingTest({
   stop,
   reset,
 }) {
-  const [text, setText] = useState(SELF_INTRO)
+  const [text, setText] = useState(EASY_PRACTICE)
   const [phase, setPhase] = useState('setup') // setup | running | done
   const [elapsed, setElapsed] = useState(0)
   const textBoxRef = useRef(null)
@@ -109,12 +114,10 @@ export default function ReadingTest({
           </>
         ) : (
           <p className="status">
-            {loading
-              ? `Loading Whisper model (first time only)…${
-                  progress != null ? ` ${Math.round(progress)}%` : ''
-                }`
-              : error
-                ? `Error: ${error}`
+            {error
+              ? `Error: ${error}`
+              : serverUp === 'down'
+                ? 'Speech server offline — start it, then restart the test'
                 : `${micLabel} — ${listening ? 'listening' : phase}`}
           </p>
         )}
@@ -122,7 +125,7 @@ export default function ReadingTest({
 
       <MicButton
         listening={listening}
-        disabled={loading || !text.trim()}
+        disabled={serverUp === 'down' || !text.trim()}
         onToggle={toggle}
       />
 

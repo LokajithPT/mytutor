@@ -15,8 +15,7 @@ export default function App() {
     () => localStorage.getItem(MIC_STORAGE_KEY) || '',
   )
   const asr = useWhisper()
-  const { supported, loading, progress, listening, transcript, interim, error } =
-    asr
+  const { supported, serverUp, listening, transcript, interim, error } = asr
 
   const selectMic = useCallback((id) => {
     setMicId(id)
@@ -130,19 +129,30 @@ export default function App() {
         />
       )}
 
+      {serverUp === 'down' && (
+        <div className="server-banner">
+          <strong>Speech server is not running.</strong>
+          <span>In a second terminal, from the project folder:</span>
+          <code>pip install -r server/requirements.txt</code>
+          <code>python server/main.py</code>
+        </div>
+      )}
+
       {mode === 'dictate' ? (
         <>
-          <MicButton listening={listening} disabled={loading} onToggle={toggle} />
+          <MicButton
+            listening={listening}
+            disabled={serverUp === 'down'}
+            onToggle={toggle}
+          />
 
           <p className="status">
-            {loading
-              ? `Loading Whisper model (first time only)…${
-                  progress != null ? ` ${Math.round(progress)}%` : ''
-                }`
-              : error
-                ? `Error: ${error}`
-                : listening
-                  ? 'Listening… click to stop'
+            {error
+              ? `Error: ${error}`
+              : listening
+                ? 'Listening… click to stop'
+                : serverUp === 'down'
+                  ? 'Waiting for speech server…'
                   : 'Click the mic and start talking'}
           </p>
 

@@ -1,0 +1,11 @@
+[project]
+name = "mytutor-stt"
+version = "0.1.0"
+description = "Local faster-whisper speech-to-text service for mytutor"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "faster-whisper>=1.0",
+    "numpy>=1.26",
+]
