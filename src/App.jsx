@@ -162,9 +162,9 @@ export default function App() {
       {serverUp === 'down' && (
         <div className="server-banner">
           <strong>Speech server is not running.</strong>
-          <span>In a second terminal, from the project folder:</span>
-          <code>pip install -r server/requirements.txt</code>
-          <code>python server/main.py</code>
+          <span>In a second terminal:</span>
+          <code>cd server &amp;&amp; uv run main.py</code>
+          <code># or: pip install -r server/requirements.txt &amp;&amp; python main.py</code>
         </div>
       )}
 

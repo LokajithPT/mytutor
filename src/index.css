@@ -377,6 +377,39 @@ body {
   font-size: 0.85rem;
 }
 
+/* STT-server-down banner */
+.server-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  max-width: 640px;
+  background: rgba(234, 67, 53, 0.08);
+  border: 1px solid rgba(234, 67, 53, 0.45);
+  border-radius: 12px;
+  padding: 16px 20px;
+  text-align: center;
+}
+
+.server-banner strong {
+  color: #ea4335;
+}
+
+.server-banner span {
+  color: #9aa0a6;
+  font-size: 0.85rem;
+}
+
+.server-banner code {
+  background: #12141a;
+  border: 1px solid #2b2f3a;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+  color: #e8eaed;
+}
+
 .mode-toggle {
   display: flex;
   background: #1a1d24;
