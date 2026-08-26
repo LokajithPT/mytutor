@@ -3,9 +3,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const SERVER_URL = '/api/stt'
 const SAMPLE_RATE = 16000
 const CHUNK_SAMPLES = 4096
-const TICK_MS = 1500 // transcription cadence while listening
+const TICK_MS = 900 // transcription cadence while listening
 const MIN_AUDIO_S = 2 // don't transcribe before this much audio exists
-const TAIL_KEEP_S = 0.35 // words ending this close to the live edge stay interim
+const TAIL_KEEP_S = 0.15 // words ending this close to the live edge stay interim
 const CONTEXT_S = 0.5 // re-check window behind the finalized frontier
 const HEALTH_POLL_MS = 10000
 // RMS below this is treated as room tone and never sent — feeding silence to
@@ -145,7 +145,7 @@ export function useWhisper() {
       const tailKeep = final ? 0 : TAIL_KEEP_S
       const fromS = Math.max(0, frontier - CONTEXT_S)
 
-      if (!final && (dur < MIN_AUDIO_S || dur - frontier < 0.8)) return
+      if (!final && (dur < MIN_AUDIO_S || dur - frontier < 0.45)) return
 
       const audio = sliceAudio(fromS, dur)
       if (audio.length < SAMPLE_RATE * 0.3) return

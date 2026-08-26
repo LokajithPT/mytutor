@@ -100,6 +100,80 @@ body {
   gap: 10px;
 }
 
+.review {
+  background: #1a1d24;
+  border: 1px solid #8ab4f8;
+  color: #8ab4f8;
+  padding: 8px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.review:hover:not(:disabled) {
+  background: rgba(138, 180, 248, 0.12);
+}
+
+.review:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Word-choice tips panel */
+.tips {
+  width: 100%;
+  max-width: 640px;
+  background: #1a1d24;
+  border: 1px solid #2b3a4a;
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+
+.tips h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #8ab4f8;
+  margin-bottom: 10px;
+}
+
+.tips ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tips li {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: #cdd1d6;
+}
+
+.tip-said {
+  color: #f0b232;
+  font-weight: 600;
+}
+
+.tip-arrow {
+  color: #5f6368;
+  margin: 0 6px;
+}
+
+.tip-alts {
+  color: #81c995;
+  font-weight: 600;
+}
+
+.tip-reason {
+  color: #9aa0a6;
+  font-size: 0.85rem;
+}
+
+.tips-empty {
+  color: #81c995;
+  font-size: 0.95rem;
+}
+
 .card.unsupported {
   background: #1a1d24;
   border: 1px solid #2b2f3a;

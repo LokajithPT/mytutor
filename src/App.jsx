@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWhisper } from './hooks/useWhisper'
 import { checkGrammar } from './lib/grammar'
+import { fetchTips } from './lib/tips'
 import MicButton from './components/MicButton'
 import MicSettings from './components/MicSettings'
 import HighlightedText from './components/HighlightedText'
@@ -32,7 +33,24 @@ export default function App() {
   const [matches, setMatches] = useState([])
   const [grammarState, setGrammarState] = useState('idle') // idle | checking | error
   const [copied, setCopied] = useState(false)
+  const [tips, setTips] = useState([])
+  const [tipsLlmOk, setTipsLlmOk] = useState(true)
+  const [tipsState, setTipsState] = useState('idle') // idle | loading | done | error
   const abortRef = useRef(null)
+
+  const reviewSpeech = useCallback(async () => {
+    if (!transcript.trim()) return
+    setTipsState('loading')
+    try {
+      const { tips: found, llmOk } = await fetchTips(transcript)
+      setTips(found)
+      setTipsLlmOk(llmOk)
+      setTipsState('done')
+    } catch {
+      setTips([])
+      setTipsState('error')
+    }
+  }, [transcript])
 
   // Grammar check runs on the finalized transcript (debounced), in Dictate
   // mode only. The original text is never changed — we collect spans to
@@ -195,6 +213,13 @@ export default function App() {
 
           <div className="actions">
             <button
+              className="review"
+              onClick={reviewSpeech}
+              disabled={!transcript || listening || tipsState === 'loading'}
+            >
+              {tipsState === 'loading' ? 'Analyzing…' : 'Review my speech'}
+            </button>
+            <button
               className="clear"
               onClick={async () => {
                 try {
@@ -213,6 +238,36 @@ export default function App() {
               Clear
             </button>
           </div>
+
+          {tipsState === 'error' && (
+            <p className="grammar-note error">
+              Review failed — is the speech server running?
+            </p>
+          )}
+
+          {tipsState === 'done' && (
+            <section className="tips">
+              <h2>Better words</h2>
+              {tips.length === 0 ? (
+                <p className="tips-empty">
+                  {tipsLlmOk
+                    ? 'Nothing to improve — nice one!'
+                    : 'Local LLM not reachable. Start llama-server, then retry.'}
+                </p>
+              ) : (
+                <ul>
+                  {tips.map((t, i) => (
+                    <li key={i}>
+                      <span className="tip-said">“{t.phrase}”</span>
+                      <span className="tip-arrow">→</span>
+                      <span className="tip-alts">{t.alternatives.join(', ')}</span>
+                      {t.reason && <span className="tip-reason"> — {t.reason}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
         </>
       ) : (
         <ReadingTest {...asr} start={startWithDevice} />
