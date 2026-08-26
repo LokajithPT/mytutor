@@ -209,7 +209,15 @@ async def tips(request: Request) -> dict:
             "error": f"LLM unreachable ({e.__class__.__name__})",
         }
 
-    return {"tips": parse_tips(content), "llm_ok": True}
+    # Integrity: only keep tips whose phrase truly appears in what was said
+    # (case-insensitive), so the UI never claims "you said X" falsely.
+    lower = text.lower()
+    valid = [
+        t
+        for t in parse_tips(content)
+        if t["phrase"].lower() in lower
+    ]
+    return {"tips": valid, "llm_ok": True}
 
 
 if __name__ == "__main__":
