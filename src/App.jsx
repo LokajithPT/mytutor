@@ -25,8 +25,13 @@ export default function App() {
   }, [])
 
   // Every capture start goes through here so the chosen device is used.
+  // New session = old coaching is obsolete.
   const startWithDevice = useCallback(
-    (opts) => asr.start({ ...opts, deviceId: micId || undefined }),
+    (opts) => {
+      setTips([])
+      setTipsState('idle')
+      return asr.start({ ...opts, deviceId: micId || undefined })
+    },
     [asr, micId],
   )
 
@@ -51,6 +56,13 @@ export default function App() {
       setTipsState('error')
     }
   }, [transcript])
+
+  // Tips describe a specific transcript — drop them whenever the words do.
+  const resetSession = useCallback(() => {
+    asr.reset()
+    setTips([])
+    setTipsState('idle')
+  }, [asr])
 
   // Grammar check runs on the finalized transcript (debounced), in Dictate
   // mode only. The original text is never changed — we collect spans to
@@ -234,7 +246,7 @@ export default function App() {
             >
               {copied ? 'Copied!' : 'Copy'}
             </button>
-            <button className="clear" onClick={asr.reset} disabled={listening}>
+            <button className="clear" onClick={resetSession} disabled={listening}>
               Clear
             </button>
           </div>
