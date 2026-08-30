@@ -6,7 +6,7 @@ const MODES = [
   { key: 'rush', title: 'Rush', desc: '60s tongue-twister arcade — streaks and points.', color:'#f472b6', icon: ( <path d="M13 2L4 14h5l-1 6 9-12h-5l1-6z" /> ) },
   { key: 'debate', title: 'Debate', desc: 'Infinite debate vs Bhaskar — stop anytime for scoring.', color:'#f0b232', icon: ( <path d="M7 8h10M7 12h7M7 16h10M4 4h16v16H4z" /> ) },
   { key: 'interview', title: 'Interview', desc: 'IELTS mock with Bhaskar — band, points and coaching.', color:'#34d399', icon: ( <path d="M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 18a8 8 0 0 1 16 0v1H4z" /> ) },
-  { key: 'history', title: 'Progress', desc: 'Scores, trends and weak-word bank — all local.', color:'#9aa0a6', icon: ( <path d="M5 19V9m5 10V5m5 14v-7M3 21h18" /> ) },
+  { key: 'history', title: 'Progress', desc: 'Scores, trends and weak-word bank — all local.', color:'#9aa0a6', icon: ( <path d="M7 17h2V9H7v8zm10 0h2V5h-2v12zm-5 0h2v-7h-2v7zM3 21h18v-2H3v2z" /> ) },
 ]
 
 export default function Home({ onSelect, lastSession }) {
