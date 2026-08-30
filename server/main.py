@@ -42,7 +42,7 @@ SAMPLE_RATE = 16000
 # Word-choice tutor: any OpenAI-compatible chat endpoint works here
 # (llama-server, Ollama's /v1, LM Studio, ...).
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:8080/v1")
-LLM_MODEL = os.environ.get("LLM_MODEL", "local")
+LLM_MODEL = os.environ.get("LLM_MODEL", "Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "no-key")
 
 TIPS_SYSTEM_PROMPT = """You are a friendly spoken-English tutor. The user gives you a verbatim transcript of what they said out loud. Identify words or short phrases that are vague, weak, or imprecise, and suggest better alternatives.

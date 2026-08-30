@@ -9,6 +9,10 @@ import ReadingTest from './components/ReadingTest'
 import Home from './components/Home'
 import ConversationCoach from './components/ConversationCoach'
 import History from './components/History'
+import ShadowDojo from './components/ShadowDojo'
+import Rush from './components/Rush'
+import Debate from './components/Debate'
+import InterviewSim from './components/InterviewSim'
 import { loadSessions } from './lib/history'
 
 const MIC_STORAGE_KEY = 'mytutor.micId'
@@ -19,6 +23,10 @@ const NAV = [
   { key: 'dictate', label: 'Dictate' },
   { key: 'read', label: 'Reading' },
   { key: 'coach', label: 'Coach' },
+  { key: 'ghost', label: 'Ghost' },
+  { key: 'rush', label: 'Rush' },
+  { key: 'debate', label: 'Debate' },
+  { key: 'interview', label: 'Interview' },
   { key: 'history', label: 'Progress' },
 ]
 
@@ -325,6 +333,10 @@ export default function App() {
         />
       )}
 
+      {mode === 'ghost' && <ShadowDojo {...asr} start={startWithDevice} reset={resetSession} />}
+      {mode === 'rush' && <Rush {...asr} start={startWithDevice} reset={resetSession} />}
+      {mode === 'debate' && <Debate {...asr} start={startWithDevice} reset={resetSession} />}
+      {mode === 'interview' && <InterviewSim {...asr} start={startWithDevice} reset={resetSession} />}
       {mode === 'history' && <History />}
 
       <style>{`

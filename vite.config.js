@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react'
 // so the browser stays same-origin and CORS never enters the picture.
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: { exclude: ['onnxruntime-web'] },
   server: {
     proxy: {
       '/api/stt': {
