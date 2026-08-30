@@ -18,8 +18,11 @@ export default function ShadowDojo({ serverUp, listening, transcript, interim, s
   const [ttsErr, setTtsErr] = useState(null)
   const [ghostPlayed, setGhostPlayed] = useState(false)
   useEffect(()=>{
-    setTtsState('loading'); setTtsProgress('Downloading voice… 0%')
-    initTTS({onProgress:(p)=> setTtsProgress(`${p.type||'downloading'} ${p.total?Math.round((p.loaded/p.total)*100):0}%`)}).then(()=>{setTtsState('ready'); setTtsProgress('Voice ready ✓')}).catch(e=>{ console.warn('PocketTTS unavailable, using browser voice',e); setTtsState('ready'); setTtsProgress('Using browser voice (PocketTTS failed: '+e.message+')'); })
+    // try PocketTTS in background, but don't block UI — browser voice works immediately
+    setTtsState('ready'); setTtsProgress('Voice ready (browser) ✓')
+    initTTS({onProgress:(p)=> setTtsProgress(`${p.type||'downloading'} ${p.total?Math.round((p.loaded/p.total)*100):0}%`)}).then((t)=>{
+      if(t) { setTtsState('ready'); setTtsProgress('Voice ready ✓') }
+    })
   },[])
   const words = useMemo(()=> tokenize(text), [text])
   const { status, pointer } = useMemo(()=>{
@@ -41,10 +44,10 @@ export default function ShadowDojo({ serverUp, listening, transcript, interim, s
       <div className="presets">{SENTENCES.map(s=> <button key={s} className={`preset ${text===s?'active':''}`} onClick={()=>setText(s)}>{s.slice(0,22)}…</button>)}</div>
       <textarea className="paragraph-input" rows={2} value={text} onChange={e=>setText(e.target.value)} />
       <div className="actions">
-        <button className="review" onClick={playGhost} disabled={ttsState==='loading'}>{ttsState==='loading'?'⏳ '+ttsProgress:'🔊 Play Ghost'}</button>
+        <button className="review" onClick={playGhost}>{`🔊 Play Ghost`}</button>
         <button className="clear" onClick={()=>stopTTS()}>Stop ghost</button>
       </div>
-      {ttsState==='loading' && <p className="grammar-note">{ttsProgress} — first time ~50MB, then cached offline.</p>}
+      <p className="grammar-note">{ttsProgress}</p>
       {ttsState==='error' && <p className="grammar-note error">TTS failed: {ttsErr}</p>}
       <MicButton listening={listening} disabled={serverUp==='down'||!text.trim()} onToggle={toggle} />
       <div className="reading-stats"><span className={accuracy>=80?'stat-good':'stat-bad'}>{accuracy}%</span><span className="stat-dim"> {status.filter(s=>s==='correct').length}/{words.length}</span></div>

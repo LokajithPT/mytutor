@@ -369,9 +369,17 @@ function CoachSummary({
               </ul>
             </div>
           )}
+          {summary.proverbs?.length > 0 && (
+            <div className="summary-col">
+              <h4 className="good">Proverbs & Idioms</h4>
+              <ul>
+                {summary.proverbs.map((p,i)=> <li key={i}><span className="imp-area">{p.saying}</span> — {p.meaning}{p.example && <><br/><span style={{color:'#9aa0a6', fontSize:'.85rem'}}>e.g. {p.example}</span></>}</li>)}
+              </ul>
+            </div>
+          )}
           {!summaryLlmOk && (
             <p className="grammar-note error">
-              Local LLM not reachable — start llama-server for AI coaching.
+              Nemotron not reachable — check server/.env NIM key.
             </p>
           )}
         </div>
@@ -379,10 +387,10 @@ function CoachSummary({
 
       {tipsState === 'done' && (
         <section className="tips">
-          <h2>Better words</h2>
+          <h2>Better words {tips.some(t=>t.proverb) && '· proverbs'}</h2>
           {tips.length === 0 ? (
             <p className="tips-empty">
-              {tipsLlmOk ? 'Nothing to improve — nice one!' : 'Local LLM not reachable. Start llama-server, then retry.'}
+              {tipsLlmOk ? 'Nothing to improve — nice one!' : 'Nemotron not reachable. Check NIM.'}
             </p>
           ) : (
             <ul>
@@ -392,6 +400,7 @@ function CoachSummary({
                   <span className="tip-arrow">→</span>
                   <span className="tip-alts">{t.alternatives.join(', ')}</span>
                   {t.reason && <span className="tip-reason"> — {t.reason}</span>}
+                  {t.proverb && <span style={{display:'block', color:'#f0b232', fontSize:'.85rem', marginTop:4}}>💡 {t.proverb}</span>}
                 </li>
               ))}
             </ul>

@@ -300,10 +300,10 @@ export default function App() {
 
           {tipsState === 'done' && (
             <section className="tips">
-              <h2>Better words</h2>
+              <h2>Better words {tips.some(t=>t.proverb) && '· proverbs'}</h2>
               {tips.length === 0 ? (
                 <p className="tips-empty">
-                  {tipsLlmOk ? 'Nothing to improve — nice one!' : 'Local LLM not reachable. Start llama-server, then retry.'}
+                  {tipsLlmOk ? 'Nothing to improve — nice one!' : 'Nemotron not reachable. Check server/.env NIM key.'}
                 </p>
               ) : (
                 <ul>
@@ -313,6 +313,7 @@ export default function App() {
                       <span className="tip-arrow">→</span>
                       <span className="tip-alts">{t.alternatives.join(', ')}</span>
                       {t.reason && <span className="tip-reason"> — {t.reason}</span>}
+                      {t.proverb && <span style={{display:'block', color:'#f0b232', fontSize:'.85rem', marginTop:4}}>💡 {t.proverb}</span>}
                     </li>
                   ))}
                 </ul>

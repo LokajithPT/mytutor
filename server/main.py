@@ -31,6 +31,19 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from faster_whisper import WhisperModel
 
+# load server/.env if present (for NVIDIA NIM keys — not committed)
+try:
+    from pathlib import Path as _P
+    _env = _P(__file__).resolve().parent / ".env"
+    if _env.exists():
+        for line in _env.read_text().splitlines():
+            line=line.strip()
+            if not line or line.startswith("#") or "=" not in line: continue
+            k,v=line.split("=",1)
+            os.environ.setdefault(k.strip(), v.strip())
+except Exception:
+    pass
+
 MODEL_SIZE = "small"
 LOCAL_DIR = Path(__file__).resolve().parent / "models" / "faster-whisper-small"
 MODEL_SOURCE = str(LOCAL_DIR) if (LOCAL_DIR / "model.bin").exists() else MODEL_SIZE
@@ -45,27 +58,29 @@ LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:8080/v1")
 LLM_MODEL = os.environ.get("LLM_MODEL", "Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "no-key")
 
-TIPS_SYSTEM_PROMPT = """You are a friendly spoken-English tutor. The user gives you a verbatim transcript of what they said out loud. Identify words or short phrases that are vague, weak, or imprecise, and suggest better alternatives.
+TIPS_SYSTEM_PROMPT = """You are a friendly spoken-English tutor with a love for proverbs, idioms and phrasal verbs. The user gives you a verbatim transcript of what they said out loud. Identify words or short phrases that are vague, weak, or imprecise, and suggest better alternatives. Where natural, also give a relevant proverb/idiom/phrasal verb they could use instead — this is optional but delightful when it fits.
 
 Rules:
-- Only word-choice coaching; do NOT fix grammar or punctuation.
+- Only word-choice + idiom coaching; do NOT fix grammar or punctuation.
 - "phrase" MUST be copied exactly from the transcript (a verbatim substring).
 - Give 2-4 natural alternatives per item.
 - "reason" is at most 12 words.
+- "proverb" is optional: a short idiom/proverb/phrasal verb + its meaning in parentheses, e.g. "break the ice (to ease tension)". Omit or leave empty if none fits naturally.
 - Maximum 8 items. If nothing needs improving, return [].
 
 Respond ONLY with a JSON array, e.g.
-[{"phrase":"nice","alternatives":["kind","welcoming"],"reason":"'nice' is vague"}]"""
+[{"phrase":"nice","alternatives":["kind","welcoming"],"reason":"'nice' is vague","proverb":"a breath of fresh air (something pleasant)"}]"""
 
-TIPS_SUMMARY_PROMPT = """You are a friendly spoken-English coach. The user gave you a verbatim transcript of them speaking freely (answering a prompt out loud). Give encouraging, specific feedback on their *fluency and structure* — not grammar, not word choice (another pass handles that).
+TIPS_SUMMARY_PROMPT = """You are a friendly spoken-English coach who loves proverbs, idioms and storytelling. The user gave you a verbatim transcript of them speaking freely (answering a prompt out loud). Give encouraging, specific feedback on their *fluency and structure* — not grammar, not word choice (another pass handles that).
 
 Cover, briefly:
 - "headline": one upbeat sentence about how they did.
 - "strengths": 2-3 short bullet strings of what went well.
 - "improvements": 2-4 objects, each {"area": short label, "tip": one concrete sentence}. Areas may include pace, fillers, organization, elaboration.
+- "proverbs": 1-3 proverbs/idioms/phrasal verbs relevant to what they said, each {"saying": the idiom, "meaning": short gloss, "example": how to use it in a sentence}. Pick ones they could have used.
 
 Respond ONLY with a JSON object, e.g.
-{"headline":"Confident delivery with clear points.","strengths":["Good pace","Stayed on topic"],"improvements":[{"area":"Fillers","tip":"Try pausing instead of saying 'like' between thoughts."}]}"""
+{"headline":"Confident delivery with clear points.","strengths":["Good pace","Stayed on topic"],"improvements":[{"area":"Fillers","tip":"Try pausing instead of saying 'like' between thoughts."}],"proverbs":[{"saying":"practice makes perfect","meaning":"improvement comes with repetition","example":"You said 'try again and again' — you could say 'practice makes perfect'."}]}"""
 
 model: WhisperModel | None = None
 
@@ -177,8 +192,9 @@ def parse_tips(content: str) -> list:
         phrase = str(item.get("phrase") or "").strip()
         alts = [str(a).strip() for a in (item.get("alternatives") or []) if str(a).strip()]
         reason = str(item.get("reason") or "").strip()
+        proverb = str(item.get("proverb") or "").strip()
         if phrase and alts:
-            tips.append({"phrase": phrase, "alternatives": alts[:4], "reason": reason})
+            tips.append({"phrase": phrase, "alternatives": alts[:4], "reason": reason, "proverb": proverb})
     return tips
 
 
@@ -204,9 +220,17 @@ def parse_summary(content: str) -> dict | None:
         tip = str(item.get("tip") or "").strip()
         if tip:
             improvements.append({"area": area, "tip": tip})
-    if not headline and not strengths and not improvements:
+    proverbs = []
+    for item in data.get("proverbs") or []:
+        if not isinstance(item, dict): continue
+        saying = str(item.get("saying") or "").strip()
+        meaning = str(item.get("meaning") or "").strip()
+        example = str(item.get("example") or "").strip()
+        if saying:
+            proverbs.append({"saying": saying, "meaning": meaning, "example": example})
+    if not headline and not strengths and not improvements and not proverbs:
         return None
-    return {"headline": headline, "strengths": strengths, "improvements": improvements}
+    return {"headline": headline, "strengths": strengths, "improvements": improvements, "proverbs": proverbs}
 
 
 @app.post("/tips")
@@ -227,20 +251,23 @@ async def tips(request: Request) -> dict:
 
     system = TIPS_SUMMARY_PROMPT if mode == "conversation_summary" else TIPS_SYSTEM_PROMPT
     max_tokens = 800 if mode == "conversation_summary" else 800
+    payload = {
+        "model": LLM_MODEL,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": text},
+        ],
+        "temperature": 0.3,
+        "max_tokens": max_tokens,
+        "stream": False,
+    }
+    if "nemotron" in LLM_MODEL.lower():
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
     try:
         async with httpx.AsyncClient(timeout=90) as client:
             r = await client.post(
                 f"{LLM_BASE_URL}/chat/completions",
-                json={
-                    "model": LLM_MODEL,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": text},
-                    ],
-                    "temperature": 0.3,
-                    "max_tokens": max_tokens,
-                    "stream": False,
-                },
+                json=payload,
                 headers=_llm_headers(),
             )
             r.raise_for_status()
