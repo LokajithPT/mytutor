@@ -167,10 +167,12 @@ export default function App() {
     )
   }
 
+  const serverDot = serverUp==='up' ? '#81c995' : serverUp==='down' ? '#ea4335' : '#9aa0a6'
   return (
     <main className="app">
       <header className="topbar">
         <button className="brand" onClick={() => goMode('home')}>
+          <span className="brand-dot" style={{background: serverDot}} />
           mytutor
         </button>
         <nav className="nav" aria-label="Mode">
@@ -341,7 +343,8 @@ export default function App() {
       {mode === 'history' && <History />}
 
       <style>{`
-        .brand { background:none; border:none; cursor:pointer; padding:0; font-size:1.28rem; font-weight:700; letter-spacing:-.02em; background: linear-gradient(90deg, #eef1f6, #8ab4f8); -webkit-background-clip:text; -webkit-text-fill-color: transparent; }
+        .brand { background:none; border:none; cursor:pointer; padding:0; font-size:1.28rem; font-weight:700; letter-spacing:-.02em; background: linear-gradient(90deg, #eef1f6, #8ab4f8); -webkit-background-clip:text; -webkit-text-fill-color: transparent; display:flex; align-items:center; gap:8px; }
+        .brand-dot { width:8px; height:8px; border-radius:99px; box-shadow: 0 0 0 4px rgba(129,201,149,0.15); flex-shrink:0; }
         .nav { display:flex; gap:4px; margin-left:auto; background: rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:12px; padding:3px; backdrop-filter: blur(6px); }
         .nav-btn { background:transparent; border:none; color:var(--muted); padding:8px 13px; cursor:pointer; font-size:.84rem; font-weight:500; border-radius:9px; transition: all .18s ease; letter-spacing:.01em; }
         .nav-btn:hover { color: var(--text); background: rgba(255,255,255,0.04); }
