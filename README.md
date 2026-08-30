@@ -3,50 +3,45 @@
 Speak. See your words instantly. Get coached.
 
 A local-first speech tutor: read passages aloud and watch a Monkeytype-style
-word tracker score you live, or free-talk and get grammar flags plus
-word-choice coaching — **everything runs on your own machine**.
+word tracker score you live, free-talk and get a fluency score + AI coaching,
+and track your progress over time — **everything runs on your own machine**.
+The only optional outbound call is the word-choice/coaching LLM, and an
+online grammar check that is *off by default*.
 
 ## Features
 
 - **Live speech-to-text** — faster-whisper (`small`, int8) served locally;
   words land in well under a second
+- **Dictate mode** — verbatim transcript with offline grammar flags (a small
+  built-in checker) and on-demand **better-word tips** from a local LLM
 - **Reading Test** — paste or pick a paragraph, read aloud: correct words
   light up, wrong/skipped words go red, caret follows your voice, timer + WPM
-- **Dictate mode** — verbatim transcript with grammar/punctuation flags
-  (LanguageTool) and on-demand **word-choice tips** from a local LLM
-  (*"you said 'nice' → try 'kind', 'welcoming'"*)
+- **Conversation Coach** (new) — pick a prompt, speak for a minute or two,
+  get a **fluency score**, filler-word check, vocabulary richness, and an AI
+  coaching summary. Fully local analytics; AI summary optional
+- **Progress** (new) — past sessions, score trend charts, and a weak-word
+  bank — all in `localStorage`, no account needed
 - **Mic settings** — device picker with a live level meter; selection persists
-- **Private & offline** — audio never leaves your machine; the only outbound
-  call is LanguageTool for grammar (optional)
+- **Private & offline-first** — audio never leaves your machine; grammar is
+  local by default
 
-## Architecture
+## Quick start (one command)
 
-```
-Browser (React/Vite)
-  │ mic ── PCM chunks every ~0.9s
-  ▼
-FastAPI :8100  (/api/stt via Vite proxy)
-  ├─ /transcribe ─▶ faster-whisper small (word timestamps, VAD)
-  └─ /tips ───────▶ llama-server :8080 (Qwen3-4B GGUF, OpenAI-compatible)
+```bash
+./start.sh
 ```
 
-## Setup
+This installs frontend deps if needed and launches both the Vite dev server
+(frontend) and the local STT server. Open **http://localhost:5173**.
 
-### Frontend
+Or run them yourself:
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173
-```
+npm run dev          # frontend only  → http://localhost:5173
 
-### Speech server
-
-```bash
-cd server
-uv run main.py       # creates .venv, installs deps, loads model
-# classic alternative:
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt && python main.py
+# in a second terminal:
+cd server && uv run main.py      # local STT server :8100
 ```
 
 The Whisper model auto-resolves: it prefers `server/models/faster-whisper-small/`
@@ -64,19 +59,46 @@ done
 ```
 </details>
 
-### Local LLM (word-choice tips)
+## Optional: AI coaching tips (local LLM)
+
+Word-choice tips and the Conversation Coach summary use a local OpenAI-
+compatible LLM (e.g. `llama-server`). Nothing is sent to the cloud.
 
 ```bash
-sudo pacman -S llama.cpp        # Arch; adapt for your distro
-llama-server \
-  -m ~/.cache/huggingface/hub/models--mmnga--Qwen3-4B-Instruct-2507-gguf/snapshots/c1405acde3ff15e3c6df0a77f1bf2529e2c98c3e/Qwen3-4B-Instruct-2507-Q4_K_M.gguf \
-  --port 8080 --ctx-size 4096
+# any GGUF, e.g. Qwen3-4B
+llama-server -m path/to/model.Q4_K_M.gguf --port 8080 --ctx-size 4096
 ```
 
-Any OpenAI-compatible endpoint works (Ollama's `/v1`, LM Studio, ...) — just
-point `LLM_BASE_URL` at it.
+Point `LLM_BASE_URL` at a different endpoint if you use Ollama/LM Studio.
+Without it, the app still works — it just shows "Local LLM not reachable"
+where AI feedback would appear, and the local fluency score still runs.
 
-### Environment variables (speech server)
+## Usage
+
+1. Run `./start.sh` (or start frontend + STT server separately).
+2. Open the app → choose a mode from the top nav:
+   - **Dictate** — mic → talk → *Review my speech* for better words.
+   - **Reading** — pick/paste a paragraph → mic → read aloud.
+   - **Coach** — pick a prompt → mic → talk → get scored + coached.
+   - **Progress** — review sessions, trends, weak words.
+3. Click the mic icon (top-right) for mic device + grammar settings.
+
+## Architecture
+
+```
+Browser (React/Vite)
+  │ mic ── PCM chunks every ~0.9s
+  ▼
+FastAPI :8100  (/api/stt via Vite proxy)
+  ├─ /transcribe ─▶ faster-whisper small (word timestamps, VAD)
+  └─ /tips ───────▶ llama-server :8080 (optional; Qwen3-4B GGUF)
+```
+
+Local analytics (fluency score, filler words, WPM, vocabulary, speaking
+time) are computed in the browser from the transcript and capture timing —
+no model, no network.
+
+## Environment variables (speech server)
 
 | Var | Default | Purpose |
 |---|---|---|
@@ -85,19 +107,12 @@ point `LLM_BASE_URL` at it.
 | `LLM_MODEL` | `local` | Model name sent to the backend |
 | `LLM_API_KEY` | `no-key` | Only if your endpoint needs one |
 
-## Usage
-
-1. Start the speech server (and `llama-server` if you want tips)
-2. `npm run dev` → open the app
-3. **Reading Test**: pick/paste a paragraph → click the mic → read aloud
-4. **Dictate**: click the mic → talk → hit **Review my speech** for coaching
-
 ## Troubleshooting
 
 - **Red banner "Speech server is not running"** — start `server/main.py`; the
   app re-checks every 10s automatically
 - **"Local LLM not reachable"** after reviewing — start `llama-server`
-- **Words feel laggy** — check that nothing else is hammering the CPU; the
-  default cadence targets <1s trailing delay
-- **Mic meter barely moves** — raise OS input gain or pick another device in
-  mic settings
+- **Words feel laggy** — check that nothing else is hammering the CPU
+- **Grammar not checking** — online grammar is off by default (local-first);
+  enable *Online grammar (LanguageTool)* in mic settings if you want it
+- **Mic meter barely moves** — raise OS input gain or pick another device

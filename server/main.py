@@ -57,6 +57,16 @@ Rules:
 Respond ONLY with a JSON array, e.g.
 [{"phrase":"nice","alternatives":["kind","welcoming"],"reason":"'nice' is vague"}]"""
 
+TIPS_SUMMARY_PROMPT = """You are a friendly spoken-English coach. The user gave you a verbatim transcript of them speaking freely (answering a prompt out loud). Give encouraging, specific feedback on their *fluency and structure* — not grammar, not word choice (another pass handles that).
+
+Cover, briefly:
+- "headline": one upbeat sentence about how they did.
+- "strengths": 2-3 short bullet strings of what went well.
+- "improvements": 2-4 objects, each {"area": short label, "tip": one concrete sentence}. Areas may include pace, fillers, organization, elaboration.
+
+Respond ONLY with a JSON object, e.g.
+{"headline":"Confident delivery with clear points.","strengths":["Good pace","Stayed on topic"],"improvements":[{"area":"Fillers","tip":"Try pausing instead of saying 'like' between thoughts."}]}"""
+
 model: WhisperModel | None = None
 
 
@@ -172,32 +182,65 @@ def parse_tips(content: str) -> list:
     return tips
 
 
+def parse_summary(content: str) -> dict | None:
+    """Best-effort extraction of a JSON object summary from LLM output."""
+    s = re.sub(r"^```(?:json)?\s*|\s*```$", "", content.strip(), flags=re.S)
+    start, end = s.find("{"), s.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    try:
+        data = json.loads(s[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    headline = str(data.get("headline") or "").strip()
+    strengths = [str(x).strip() for x in (data.get("strengths") or []) if str(x).strip()]
+    improvements = []
+    for item in data.get("improvements") or []:
+        if not isinstance(item, dict):
+            continue
+        area = str(item.get("area") or "").strip()
+        tip = str(item.get("tip") or "").strip()
+        if tip:
+            improvements.append({"area": area, "tip": tip})
+    if not headline and not strengths and not improvements:
+        return None
+    return {"headline": headline, "strengths": strengths, "improvements": improvements}
+
+
 @app.post("/tips")
 async def tips(request: Request) -> dict:
-    """Word-choice coaching for a transcript, via the local LLM."""
+    """Coaching for a transcript via the local LLM.
+
+    mode="word_choice" (default): vague-word alternatives.
+    mode="conversation_summary": structured fluency/structure feedback.
+    """
     try:
         body = await request.json()
     except Exception:
-        return {"tips": [], "llm_ok": True}
+        return {"tips": [], "summary": None, "llm_ok": True}
     text = (body.get("text") or "").strip()[:4000]
+    mode = (body.get("mode") or "word_choice").lower()
     if not text:
-        return {"tips": [], "llm_ok": True}
+        return {"tips": [], "summary": None, "llm_ok": True}
 
-    payload = {
-        "model": LLM_MODEL,
-        "messages": [
-            {"role": "system", "content": TIPS_SYSTEM_PROMPT},
-            {"role": "user", "content": text},
-        ],
-        "temperature": 0.3,
-        "max_tokens": 800,
-        "stream": False,
-    }
+    system = TIPS_SUMMARY_PROMPT if mode == "conversation_summary" else TIPS_SYSTEM_PROMPT
+    max_tokens = 800 if mode == "conversation_summary" else 800
     try:
         async with httpx.AsyncClient(timeout=90) as client:
             r = await client.post(
                 f"{LLM_BASE_URL}/chat/completions",
-                json=payload,
+                json={
+                    "model": LLM_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": text},
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": max_tokens,
+                    "stream": False,
+                },
                 headers=_llm_headers(),
             )
             r.raise_for_status()
@@ -205,19 +248,19 @@ async def tips(request: Request) -> dict:
     except Exception as e:
         return {
             "tips": [],
+            "summary": None,
             "llm_ok": False,
             "error": f"LLM unreachable ({e.__class__.__name__})",
         }
 
+    if mode == "conversation_summary":
+        return {"tips": [], "summary": parse_summary(content), "llm_ok": True}
+
     # Integrity: only keep tips whose phrase truly appears in what was said
     # (case-insensitive), so the UI never claims "you said X" falsely.
     lower = text.lower()
-    valid = [
-        t
-        for t in parse_tips(content)
-        if t["phrase"].lower() in lower
-    ]
-    return {"tips": valid, "llm_ok": True}
+    valid = [t for t in parse_tips(content) if t["phrase"].lower() in lower]
+    return {"tips": valid, "summary": None, "llm_ok": True}
 
 
 if __name__ == "__main__":

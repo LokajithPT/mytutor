@@ -6,17 +6,33 @@ import MicButton from './components/MicButton'
 import MicSettings from './components/MicSettings'
 import HighlightedText from './components/HighlightedText'
 import ReadingTest from './components/ReadingTest'
+import Home from './components/Home'
+import ConversationCoach from './components/ConversationCoach'
+import History from './components/History'
+import { loadSessions } from './lib/history'
 
 const MIC_STORAGE_KEY = 'mytutor.micId'
+const GRAMMAR_STORAGE_KEY = 'mytutor.onlineGrammar'
+
+const NAV = [
+  { key: 'home', label: 'Home' },
+  { key: 'dictate', label: 'Dictate' },
+  { key: 'read', label: 'Reading' },
+  { key: 'coach', label: 'Coach' },
+  { key: 'history', label: 'Progress' },
+]
 
 export default function App() {
-  const [mode, setMode] = useState('dictate') // dictate | read
+  const [mode, setMode] = useState('home')
   const [showMicPanel, setShowMicPanel] = useState(false)
   const [micId, setMicId] = useState(
     () => localStorage.getItem(MIC_STORAGE_KEY) || '',
   )
+  const [onlineGrammar, setOnlineGrammar] = useState(
+    () => localStorage.getItem(GRAMMAR_STORAGE_KEY) === '1',
+  )
   const asr = useWhisper()
-  const { supported, serverUp, listening, transcript, interim, error } = asr
+  const { supported, serverUp, listening, transcript, interim, error, speakingSeconds } = asr
 
   const selectMic = useCallback((id) => {
     setMicId(id)
@@ -24,16 +40,13 @@ export default function App() {
     else localStorage.removeItem(MIC_STORAGE_KEY)
   }, [])
 
-  // Every capture start goes through here so the chosen device is used.
-  // New session = old coaching is obsolete.
-  const startWithDevice = useCallback(
-    (opts) => {
-      setTips([])
-      setTipsState('idle')
-      return asr.start({ ...opts, deviceId: micId || undefined })
-    },
-    [asr, micId],
-  )
+  const toggleGrammar = useCallback(() => {
+    setOnlineGrammar((v) => {
+      const next = !v
+      localStorage.setItem(GRAMMAR_STORAGE_KEY, next ? '1' : '0')
+      return next
+    })
+  }, [])
 
   const [matches, setMatches] = useState([])
   const [grammarState, setGrammarState] = useState('idle') // idle | checking | error
@@ -42,6 +55,30 @@ export default function App() {
   const [tipsLlmOk, setTipsLlmOk] = useState(true)
   const [tipsState, setTipsState] = useState('idle') // idle | loading | done | error
   const abortRef = useRef(null)
+
+  const resetSession = useCallback(() => {
+    asr.reset()
+    setTips([])
+    setTipsState('idle')
+    setMatches([])
+    setGrammarState('idle')
+  }, [asr])
+
+  const startWithDevice = useCallback(
+    (opts) => asr.start({ ...opts, deviceId: micId || undefined }),
+    [asr, micId],
+  )
+
+  const goMode = useCallback(
+    (m) => {
+      if (m === mode) return
+      if (asr.listening) asr.stop()
+      resetSession()
+      setShowMicPanel(false)
+      setMode(m)
+    },
+    [mode, asr, resetSession],
+  )
 
   const reviewSpeech = useCallback(async () => {
     if (!transcript.trim()) return
@@ -57,16 +94,6 @@ export default function App() {
     }
   }, [transcript])
 
-  // Tips describe a specific transcript — drop them whenever the words do.
-  const resetSession = useCallback(() => {
-    asr.reset()
-    setTips([])
-    setTipsState('idle')
-  }, [asr])
-
-  // Grammar check runs on the finalized transcript (debounced), in Dictate
-  // mode only. The original text is never changed — we collect spans to
-  // highlight, ignoring punctuation/casing categories.
   useEffect(() => {
     if (mode !== 'dictate' || !transcript.trim()) {
       setMatches([])
@@ -79,7 +106,10 @@ export default function App() {
       abortRef.current = ctrl
       setGrammarState('checking')
       try {
-        const found = await checkGrammar(transcript, { signal: ctrl.signal })
+        const found = await checkGrammar(transcript, {
+          signal: ctrl.signal,
+          online: onlineGrammar,
+        })
         if (!ctrl.signal.aborted) {
           setMatches(found)
           setGrammarState('idle')
@@ -91,7 +121,7 @@ export default function App() {
       }
     }, 700)
     return () => clearTimeout(handle)
-  }, [transcript, mode])
+  }, [transcript, mode, onlineGrammar])
 
   const toggle = () => (listening ? asr.stop() : startWithDevice())
 
@@ -105,6 +135,15 @@ export default function App() {
         .filter((m) => m.phrase),
     [matches, transcript],
   )
+
+  const lastSession = useMemo(() => {
+    const all = loadSessions()
+    if (!all.length) return null
+    const s = all[all.length - 1]
+    const when = new Date(s.date)
+    const label = `${s.mode === 'coach' ? 'Coach' : 'Reading'} · ${when.toLocaleDateString()}`
+    return { label }
+  }, [mode])
 
   if (!supported) {
     return (
@@ -123,43 +162,42 @@ export default function App() {
   return (
     <main className="app">
       <header className="topbar">
-        <h1>mytutor</h1>
-        <div className="controls">
-          <nav className="mode-toggle" aria-label="Mode">
+        <button className="brand" onClick={() => goMode('home')}>
+          mytutor
+        </button>
+        <nav className="nav" aria-label="Mode">
+          {NAV.map((n) => (
             <button
-              className={`mode-btn ${mode === 'dictate' ? 'active' : ''}`}
-              onClick={() => setMode('dictate')}
+              key={n.key}
+              className={`nav-btn ${mode === n.key ? 'active' : ''}`}
+              onClick={() => goMode(n.key)}
             >
-              Dictate
+              {n.label}
             </button>
-            <button
-              className={`mode-btn ${mode === 'read' ? 'active' : ''}`}
-              onClick={() => setMode('read')}
-            >
-              Reading Test
-            </button>
-          </nav>
-          <button
-            className="settings-btn"
-            aria-label="Microphone settings"
-            title="Microphone settings"
-            onClick={() => setShowMicPanel((v) => !v)}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z" />
-            </svg>
-          </button>
-        </div>
+          ))}
+        </nav>
+        <button
+          className="settings-btn"
+          aria-label="Microphone settings"
+          title="Settings"
+          onClick={() => setShowMicPanel((v) => !v)}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z" />
+          </svg>
+        </button>
       </header>
 
       {showMicPanel && (
         <MicSettings
           currentId={micId}
           onSelect={selectMic}
+          onlineGrammar={onlineGrammar}
+          onToggleGrammar={toggleGrammar}
         />
       )}
 
-      {serverUp === 'down' && (
+      {serverUp === 'down' && mode !== 'home' && mode !== 'history' && (
         <div className="server-banner">
           <strong>Speech server is not running.</strong>
           <span>In a second terminal:</span>
@@ -168,13 +206,11 @@ export default function App() {
         </div>
       )}
 
-      {mode === 'dictate' ? (
+      {mode === 'home' && <Home onSelect={goMode} lastSession={lastSession} />}
+
+      {mode === 'dictate' && (
         <>
-          <MicButton
-            listening={listening}
-            disabled={serverUp === 'down'}
-            onToggle={toggle}
-          />
+          <MicButton listening={listening} disabled={serverUp === 'down'} onToggle={toggle} />
 
           <p className="status">
             {error
@@ -194,12 +230,12 @@ export default function App() {
             {listening && <span className="caret" />}
           </section>
 
-          {grammarState === 'checking' && (
-            <p className="grammar-note">Checking grammar…</p>
-          )}
+          {grammarState === 'checking' && <p className="grammar-note">Checking grammar…</p>}
           {grammarState === 'error' && (
             <p className="grammar-note error">
-              Grammar check unavailable (needs internet).
+              {onlineGrammar
+                ? 'Grammar check unavailable (needs internet).'
+                : 'Grammar check failed.'}
             </p>
           )}
 
@@ -209,8 +245,7 @@ export default function App() {
               <ul>
                 {issueList.map((m, i) => (
                   <li key={i}>
-                    <span className="issue-phrase">“{m.phrase}”</span> —{' '}
-                    {m.message}
+                    <span className="issue-phrase">“{m.phrase}”</span> — {m.message}
                     {m.suggestions?.length > 0 && (
                       <span className="issue-suggestion">
                         {' '}
@@ -252,9 +287,7 @@ export default function App() {
           </div>
 
           {tipsState === 'error' && (
-            <p className="grammar-note error">
-              Review failed — is the speech server running?
-            </p>
+            <p className="grammar-note error">Review failed — is the speech server running?</p>
           )}
 
           {tipsState === 'done' && (
@@ -262,9 +295,7 @@ export default function App() {
               <h2>Better words</h2>
               {tips.length === 0 ? (
                 <p className="tips-empty">
-                  {tipsLlmOk
-                    ? 'Nothing to improve — nice one!'
-                    : 'Local LLM not reachable. Start llama-server, then retry.'}
+                  {tipsLlmOk ? 'Nothing to improve — nice one!' : 'Local LLM not reachable. Start llama-server, then retry.'}
                 </p>
               ) : (
                 <ul>
@@ -281,9 +312,28 @@ export default function App() {
             </section>
           )}
         </>
-      ) : (
-        <ReadingTest {...asr} start={startWithDevice} />
       )}
+
+      {mode === 'read' && <ReadingTest {...asr} start={startWithDevice} reset={resetSession} />}
+
+      {mode === 'coach' && (
+        <ConversationCoach
+          {...asr}
+          start={startWithDevice}
+          reset={resetSession}
+          speakingSeconds={speakingSeconds}
+        />
+      )}
+
+      {mode === 'history' && <History />}
+
+      <style>{`
+        .brand { background:none; border:none; color:#e8eaed; font-size:1.25rem; font-weight:700; cursor:pointer; padding:0; }
+        .nav { display:flex; gap:4px; margin-left:auto; background:#1a1d24; border:1px solid #2b2f3a; border-radius:10px; overflow:hidden; }
+        .nav-btn { background:transparent; border:none; color:#9aa0a6; padding:8px 14px; cursor:pointer; font-size:.9rem; }
+        .nav-btn.active { background:#2b2f3a; color:#e8eaed; }
+        @media (max-width:680px){ .nav-btn { padding:7px 9px; font-size:.8rem; } .brand { font-size:1.1rem; } }
+      `}</style>
     </main>
   )
 }

@@ -13,6 +13,7 @@ const HEALTH_POLL_MS = 10000
 // tails from being clipped at speech boundaries.
 const SPEECH_RMS = 0.0025
 const HANGOVER_CHUNKS = 8 // ~2s of trailing audio kept after speech stops
+const CHUNK_DURATION = CHUNK_SAMPLES / SAMPLE_RATE // seconds per captured chunk
 
 /**
  * Live speech-to-text backed by the local faster-whisper service
@@ -68,6 +69,8 @@ export function useWhisper() {
   const captureRateRef = useRef(SAMPLE_RATE)
   const serverUpRef = useRef('unknown')
   const hangoverRef = useRef(0)
+  const totalChunksRef = useRef(0) // all captured chunks (silence + speech)
+  const speechChunksRef = useRef(0) // chunks kept (above RMS or in hangover)
 
   // Growing audio buffer, kept as fixed-size chunks.
   const chunksRef = useRef([])
@@ -79,6 +82,8 @@ export function useWhisper() {
     totalRef.current = 0
     frontierRef.current = 0
     hangoverRef.current = 0
+    totalChunksRef.current = 0
+    speechChunksRef.current = 0
     busyRef.current = false
   }, [])
 
@@ -253,12 +258,15 @@ export function useWhisper() {
           for (let i = 0; i < data.length; i++) sum += data[i] * data[i]
           const rms = Math.sqrt(sum / data.length)
 
+          totalChunksRef.current++
           if (rms >= SPEECH_RMS) {
             hangoverRef.current = HANGOVER_CHUNKS
             pushChunk(data)
+            speechChunksRef.current++
           } else if (hangoverRef.current > 0) {
             hangoverRef.current--
             pushChunk(data)
+            speechChunksRef.current++
           }
           // else: dead air — dropped, timeline stays consistent because
           // totalRef only counts what we actually keep.
@@ -323,6 +331,9 @@ export function useWhisper() {
     transcript,
     interim,
     error,
+    // Approximate speech vs total airtime, derived from captured chunks.
+    // Read as a snapshot; re-renders happen on transcript ticks.
+    speakingSeconds: speechChunksRef.current * CHUNK_DURATION,
     start,
     stop,
     reset,

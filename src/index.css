@@ -377,6 +377,34 @@ body {
   font-size: 0.85rem;
 }
 
+.grammar-toggle {
+  border-top: 1px solid #2b2f3a;
+  padding-top: 14px;
+}
+
+.grammar-toggle label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  color: #cdd1d6;
+  font-size: 0.9rem;
+}
+
+.grammar-toggle input {
+  margin-top: 3px;
+  width: 16px;
+  height: 16px;
+  accent-color: #8ab4f8;
+}
+
+.grammar-toggle small {
+  display: block;
+  color: #9aa0a6;
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+
 /* STT-server-down banner */
 .server-banner {
   display: flex;

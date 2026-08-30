@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-export default function MicSettings({ currentId, onSelect }) {
+export default function MicSettings({ currentId, onSelect, onlineGrammar, onToggleGrammar }) {
   const [devices, setDevices] = useState([])
   const [needsPermission, setNeedsPermission] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -157,6 +157,16 @@ export default function MicSettings({ currentId, onSelect }) {
       <p className="panel-note">
         Changes apply the next time you click the mic.
       </p>
+
+      <div className="grammar-toggle">
+        <label>
+          <input type="checkbox" checked={onlineGrammar} onChange={onToggleGrammar} />
+          <span>
+            Online grammar (LanguageTool)
+            <small>Off by default — keeps everything on your machine.</small>
+          </span>
+        </label>
+      </div>
     </section>
   )
 }
