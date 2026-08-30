@@ -72,15 +72,58 @@ Respond ONLY with a JSON array, e.g.
 [{"phrase":"nice","alternatives":["kind","welcoming"],"reason":"'nice' is vague","proverb":"a breath of fresh air (something pleasant)"}]"""
 
 TIPS_SUMMARY_PROMPT = """You are a friendly spoken-English coach who loves proverbs, idioms and storytelling. The user gave you a verbatim transcript of them speaking freely (answering a prompt out loud). Give encouraging, specific feedback on their *fluency and structure* — not grammar, not word choice (another pass handles that).
+You have ONLY the transcript text and derived metrics (word count, filler count). You have NO audio, NO video, NO eye contact, NO body language, NO posture, NO gestures, NO facial expression. NEVER invent or mention eye contact, gaze, posture, gestures, appearance, smile, eye, face, body, stage presence.
 
 Cover, briefly:
 - "headline": one upbeat sentence about how they did.
-- "strengths": 2-3 short bullet strings of what went well.
-- "improvements": 2-4 objects, each {"area": short label, "tip": one concrete sentence}. Areas may include pace, fillers, organization, elaboration.
+- "strengths": 2-3 short bullet strings of what went well — grounded ONLY in transcript evidence (e.g. clear structure, stayed on topic, good vocabulary variety, steady pace inferred from filler/word count). NEVER claim visual traits.
+- "improvements": 2-4 objects, each {"area": short label, "tip": one concrete sentence}. Areas may include pace, fillers, organization, elaboration, vocabulary variety — all inferred from text only.
 - "proverbs": 1-3 proverbs/idioms/phrasal verbs relevant to what they said, each {"saying": the idiom, "meaning": short gloss, "example": how to use it in a sentence}. Pick ones they could have used.
 
 Respond ONLY with a JSON object, e.g.
-{"headline":"Confident delivery with clear points.","strengths":["Good pace","Stayed on topic"],"improvements":[{"area":"Fillers","tip":"Try pausing instead of saying 'like' between thoughts."}],"proverbs":[{"saying":"practice makes perfect","meaning":"improvement comes with repetition","example":"You said 'try again and again' — you could say 'practice makes perfect'."}]}"""
+{"headline":"Confident delivery with clear points.","strengths":["Good pace inferred from low filler rate","Stayed on topic and organized ideas"],"improvements":[{"area":"Fillers","tip":"Try pausing instead of saying 'like' between thoughts."}],"proverbs":[{"saying":"practice makes perfect","meaning":"improvement comes with repetition","example":"You said 'try again and again' — you could say 'practice makes perfect'."}]}"""
+
+
+
+DEBATE_PROMPT = """You are Bhaskar — a 28-year-old, sharp, warm, witty guy from India who loves a good debate. You talk like a real human, not a coach or bot. Contractions, short sentences, a little humor, direct but respectful. You never say you are an AI. You never give coaching feedback or bullet points. You are the opponent.
+
+Task: Read the motion and what the user just said. Give a direct counter-argument in 70-90 words, opposite stance, like you are replying in a chat. Be conversational, add one specific concrete example (real life, work, college) and maybe one rhetorical question. No headings, no bullet points, no "as an AI", no emoji.
+
+Respond ONLY with the reply text — no JSON, no quotes wrapper."""
+
+COACH_CHAT_PROMPT = """You are Bhaskar — a warm, encouraging conversational partner from India, 28. You chat like a real human friend, not a bot. Keep it natural (40-70 words), curious, supportive, contractions, short sentences.
+
+Rules:
+- Always reference one specific detail the user just said. If they said almost nothing (e.g. "let me tell you a story" / "hi" / <10 words without substance), warmly invite them to start: "Go ahead, I'm listening — what happened?" and tie it to the original prompt.
+- Don't repeat the generic "Nice — tell me a bit more. What happened next?" — make it specific to what they said.
+- Ask exactly one open follow-up question that keeps them talking about the prompt topic.
+- Never coach, never score, no bullet points, no emoji, never say you are AI.
+
+Respond ONLY with your chat reply — one paragraph."""
+
+def reading_prompt_for_level(level: int, words: int | None = None) -> str:
+    lvl = max(1, min(10, int(level)))
+    descriptions = {
+        1: "Level 1 — very easy (A1). Simple present, most common 500 words, no complex clauses.",
+        2: "Level 2 — easy (A1+). Simple sentences, basic connectors (and, but, because).",
+        3: "Level 3 — easy+ (A2). A bit more detail, past tense allowed, everyday topics.",
+        4: "Level 4 — lower intermediate (A2+). Mix of present/past, some adjectives/adverbs.",
+        5: "Level 5 — intermediate (B1). Varied sentences, some B1 vocabulary, one or two complex sentences.",
+        6: "Level 6 — intermediate+ (B1+). Richer vocabulary, opinions and reasons.",
+        7: "Level 7 — upper intermediate (B2). Complex sentences, connectors (however, although), abstract ideas.",
+        8: "Level 8 — advanced (B2+). Nuanced vocabulary, idiomatic hints, longer sentences.",
+        9: "Level 9 — very advanced (C1). Sophisticated vocabulary, academic tone, subtle idioms.",
+        10: "Level 10 — expert (C1/C2). Dense academic/abstract, rich idioms and complex structures, challenging even for natives.",
+    }
+    desc = descriptions[lvl]
+    wc = f" Exactly {words} words (within 2 words)." if words else " Keep it within the word count for the level."
+    return f"""You are a reading passage generator for English learners. Generate a single paragraph for a read-aloud test at {desc}
+
+Rules:
+- Exactly one paragraph, no title, no bullet points, no extra explanation.
+- Interesting, natural topic (culture, science, travel, life) — keep it engaging.
+- Use clear punctuation so it can be read aloud.{wc}
+- Respond ONLY with the paragraph text."""
 
 model: WhisperModel | None = None
 
@@ -246,11 +289,67 @@ async def tips(request: Request) -> dict:
         return {"tips": [], "summary": None, "llm_ok": True}
     text = (body.get("text") or "").strip()[:4000]
     mode = (body.get("mode") or "word_choice").lower()
+    level = body.get("level")  # for reading_generate
+    words = body.get("words") or body.get("wordCount")
+
+    if mode == "reading_generate":
+        # level can be in body.level or in text like "5"
+        lvl = 5
+        try:
+            if level is not None:
+                lvl = int(level)
+            else:
+                m = re.search(r"\b(\d+)\b", text)
+                if m: lvl = int(m.group(1))
+        except: lvl = 5
+        lvl = max(1, min(10, lvl))
+        # words: optional exact word count 10-200
+        wc = None
+        try:
+            if words is not None:
+                wc = int(words)
+                wc = max(10, min(200, wc))
+        except: wc = None
+        system = reading_prompt_for_level(lvl, wc)
+        user_msg = f"Generate a Level {lvl} paragraph now." + (f" Exactly {wc} words." if wc else "")
+        payload = {
+            "model": LLM_MODEL,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user_msg}],
+            "temperature": 0.8,
+            "max_tokens": 500,
+            "stream": False,
+        }
+        if "nemotron" in LLM_MODEL.lower():
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.post(f"{LLM_BASE_URL}/chat/completions", json=payload, headers=_llm_headers())
+                r.raise_for_status()
+                para = r.json()["choices"][0]["message"]["content"].strip()
+                # strip quotes / extra formatting
+                para = re.sub(r'^["\']|["\']$', '', para).strip()
+                # take first paragraph only
+                para = para.split("\n\n")[0].strip()
+                if not para: raise ValueError("empty")
+                return {"paragraph": para, "level": lvl, "llm_ok": True}
+        except Exception as e:
+            return {"paragraph": None, "level": lvl, "llm_ok": False, "error": f"LLM unreachable ({e.__class__.__name__})"}
+
     if not text:
         return {"tips": [], "summary": None, "llm_ok": True}
 
-    system = TIPS_SUMMARY_PROMPT if mode == "conversation_summary" else TIPS_SYSTEM_PROMPT
-    max_tokens = 800 if mode == "conversation_summary" else 800
+    if mode == "debate":
+        system = DEBATE_PROMPT
+        max_tokens = 220
+    elif mode == "coach_chat":
+        system = COACH_CHAT_PROMPT
+        max_tokens = 150
+    elif mode == "conversation_summary":
+        system = TIPS_SUMMARY_PROMPT
+        max_tokens = 800
+    else:
+        system = TIPS_SYSTEM_PROMPT
+        max_tokens = 800
     payload = {
         "model": LLM_MODEL,
         "messages": [
@@ -280,6 +379,8 @@ async def tips(request: Request) -> dict:
             "error": f"LLM unreachable ({e.__class__.__name__})",
         }
 
+    if mode in ("debate", "coach_chat"):
+        return {"tips": [], "summary": None, "reply": content.strip(), "llm_ok": True}
     if mode == "conversation_summary":
         return {"tips": [], "summary": parse_summary(content), "llm_ok": True}
 

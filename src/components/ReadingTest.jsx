@@ -25,7 +25,24 @@ export default function ReadingTest({
   const [text, setText] = useState(EASY_PRACTICE)
   const [phase, setPhase] = useState('setup') // setup | running | done
   const [elapsed, setElapsed] = useState(0)
+  const [level, setLevel] = useState(5)
+  const [wordCount, setWordCount] = useState(50)
+  const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState(null)
   const textBoxRef = useRef(null)
+
+  async function generate(){
+    setGenerating(true); setGenError(null)
+    try{
+      const res = await fetch('/api/stt/tips', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text: String(level), level, words: wordCount, mode:'reading_generate'})})
+      const data = await res.json()
+      if(data.paragraph){ setText(data.paragraph); setPhase('setup') }
+      else if(data.llm_ok===false) throw new Error(data.error || 'LLM not reachable')
+      else throw new Error('Empty generation')
+    } catch(e){
+      setGenError(e.message || 'Generation failed')
+    } finally{ setGenerating(false) }
+  }
 
   const words = useMemo(() => tokenize(text), [text])
 
@@ -88,11 +105,29 @@ export default function ReadingTest({
         ? 'Reading… click to finish'
         : 'Click the mic to restart the test'
 
+  const levelLabel = level<=3 ? 'Easy' : level<=5 ? 'Medium' : level<=7 ? 'Hard' : level<=9 ? 'Very Hard' : 'Expert'
   return (
     <section className="reading">
       <div className="reading-head">
         {phase === 'setup' ? (
           <>
+            <div style={{background:'#1a1d24', border:'1px solid #2b2f3a', borderRadius:12, padding:12, display:'flex', flexDirection:'column', gap:10}}>
+              <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                <span style={{color:'#9aa0a6', fontSize:12, minWidth:70}}>Level {level} — {levelLabel}</span>
+                <input type="range" min="1" max="10" value={level} onChange={e=> setLevel(parseInt(e.target.value))} style={{flex:1, accentColor:'#8ab4f8'}} />
+                <button className="review" onClick={generate} disabled={generating} style={{whiteSpace:'nowrap'}}>{generating ? 'Generating...' : `Generate`}</button>
+              </div>
+              <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+                {[1,2,3,4,5,6,7,8,9,10].map(n=> <button key={n} onClick={()=> setLevel(n)} style={{width:32, height:32, borderRadius:8, border: level===n ? '1px solid #8ab4f8' : '1px solid #2b2f3a', background: level===n ? '#1a2a4a' : 'transparent', color: level===n ? '#8ab4f8' : '#9aa0a6', cursor:'pointer', fontSize:12}}>{n}</button>)}
+              </div>
+              <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                <span style={{color:'#9aa0a6', fontSize:12}}>Words:</span>
+                {[10,25,50,75,100,150].map(n=> <button key={n} onClick={()=> setWordCount(n)} style={{padding:'6px 10px', borderRadius:8, border: wordCount===n ? '1px solid #8ab4f8' : '1px solid #2b2f3a', background: wordCount===n ? '#1a2a4a' : 'transparent', color: wordCount===n ? '#8ab4f8' : '#9aa0a6', cursor:'pointer', fontSize:12}}>{n}</button>)}
+                <input type="number" min="10" max="200" value={wordCount} onChange={e=> setWordCount(Math.max(10, Math.min(200, parseInt(e.target.value)||10)))} style={{width:70, background:'#12141a', border:'1px solid #2b2f3a', borderRadius:8, color:'#e8eaed', padding:'6px 8px', fontSize:12}} />
+                <span style={{color:'#5f6368', fontSize:11}}>10-200</span>
+              </div>
+              {genError && <p className="grammar-note error">{genError} — try again or paste manually. Needs NIM.</p>}
+            </div>
             <div className="presets">
               {PRESETS.map((p) => (
                 <button
@@ -109,7 +144,7 @@ export default function ReadingTest({
               rows={7}
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Paste a paragraph to read…"
+              placeholder="Paste a paragraph to read… or generate one above"
             />
           </>
         ) : (

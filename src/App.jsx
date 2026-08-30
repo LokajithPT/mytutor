@@ -313,7 +313,7 @@ export default function App() {
                       <span className="tip-arrow">→</span>
                       <span className="tip-alts">{t.alternatives.join(', ')}</span>
                       {t.reason && <span className="tip-reason"> — {t.reason}</span>}
-                      {t.proverb && <span style={{display:'block', color:'#f0b232', fontSize:'.85rem', marginTop:4}}>💡 {t.proverb}</span>}
+                      {t.proverb && <span style={{display:'block', color:'#8ab4f8', fontSize:'.84rem', marginTop:4}}>{t.proverb}</span>}
                     </li>
                   ))}
                 </ul>
@@ -341,11 +341,13 @@ export default function App() {
       {mode === 'history' && <History />}
 
       <style>{`
-        .brand { background:none; border:none; color:#e8eaed; font-size:1.25rem; font-weight:700; cursor:pointer; padding:0; }
-        .nav { display:flex; gap:4px; margin-left:auto; background:#1a1d24; border:1px solid #2b2f3a; border-radius:10px; overflow:hidden; }
-        .nav-btn { background:transparent; border:none; color:#9aa0a6; padding:8px 14px; cursor:pointer; font-size:.9rem; }
-        .nav-btn.active { background:#2b2f3a; color:#e8eaed; }
-        @media (max-width:680px){ .nav-btn { padding:7px 9px; font-size:.8rem; } .brand { font-size:1.1rem; } }
+        .brand { background:none; border:none; cursor:pointer; padding:0; font-size:1.28rem; font-weight:700; letter-spacing:-.02em; background: linear-gradient(90deg, #eef1f6, #8ab4f8); -webkit-background-clip:text; -webkit-text-fill-color: transparent; }
+        .nav { display:flex; gap:4px; margin-left:auto; background: rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:12px; padding:3px; backdrop-filter: blur(6px); }
+        .nav-btn { background:transparent; border:none; color:var(--muted); padding:8px 13px; cursor:pointer; font-size:.84rem; font-weight:500; border-radius:9px; transition: all .18s ease; letter-spacing:.01em; }
+        .nav-btn:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+        .nav-btn.active { background: linear-gradient(180deg, #252a38, #1e2433); color:var(--text); box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 2px 8px rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); }
+        @media (max-width:780px){ .topbar { gap:8px; padding:8px 10px; } .nav { gap:2px; padding:2px; } .nav-btn { padding:7px 8px; font-size:.78rem; } .brand { font-size:1.05rem; } }
+        @media (max-width:560px){ .nav { overflow-x:auto; scrollbar-width:none; } .nav::-webkit-scrollbar{ display:none; } }
       `}</style>
     </main>
   )
